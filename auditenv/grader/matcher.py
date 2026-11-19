@@ -80,7 +80,7 @@ def _parse_finding(raw):
         return None
     ftype, affected = raw.get(F_TYPE), raw.get(F_AFFECTED)
     amount, currency, evidence = raw.get(F_AMOUNT), raw.get(F_CURRENCY), raw.get(F_EVIDENCE)
-    if not isinstance(ftype, str) or ftype not in ISSUE_TYPES:
+    if type(ftype) is not str or ftype not in ISSUE_TYPES:
         return None
     if not _is_id_list(affected) or not affected:
         return None
@@ -111,7 +111,7 @@ def parse_truth(truth):
             if not ok_lists or type(raw["issue_id"]) is not str or type(raw["type"]) is not str:
                 raise TypeError("issue_id, type and ids must be strings, ids in lists")
             all_ids = raw["affected_ids"] + [x for s in raw["evidence_sets"] for x in s]
-            if any(x.startswith("je/") for x in all_ids):
+            if any(normalize_id(x).startswith("je/") or x.startswith("je/") for x in all_ids):
                 raise TypeError("je/ ids are not records (SPEC.md §3.3)")
             issue = Issue(
                 issue_id=raw["issue_id"],
