@@ -1,0 +1,15 @@
+line_id,invoice_id,description,qty,unit_price_minor,amount_minor
+89Y480,0XERMY,Project cargo Busan-Almaty,1,1000000,1000000
+6MHK5P,G0QJMF,Hosting subscription,1,120000,120000
+XNW5YG,P18WZP,Hosting subscription,1,120000,120000
+G78PEB,RRH8VY,Warehouse services September,1,148000000,148000000
+FR2F0A,ZZRFBK,Warehouse services September,1,148000000,148000000
+FC0390,VX37TR,Cross-dock services October,1,187500000,187500000
+WYEVJ8,EY31ZP,Warehouse handling,1,200000000,200000000
+QRFE3R,1TNM24,Container freight Almaty-Hamburg 40ft,1,325000,325000
+P22AC2,F7SF66,Container freight Almaty-Hamburg 40ft,1,325000,325000
+6D0NNY,39487B,Storage September,1,41000000,41000000
+7ESSPH,FRVMVD,Air freight Frankfurt-Almaty,1,500000,500000
+TM58KM,Q4V1X2,Customs brokerage,1,600000,600000
+RB84D2,REB8R3,Freight forwarding Shanghai-Almaty,1,840000,840000
+87PHDP,WBDSQ3,Rail freight Almaty-Duisburg,1,98000,98000

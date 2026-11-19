@@ -1,0 +1,133 @@
+{
+  "generator_version": "golden-0.1",
+  "injections": [
+    {
+      "issue_id": "G21S27",
+      "root_cause": "vendor bill keyed twice, second time without dashes",
+      "scenario_id": "S1",
+      "type": "duplicate_invoice",
+      "variant": "same_vendor_ref_reformatted"
+    },
+    {
+      "issue_id": "FDZ2T6",
+      "root_cause": "allocation keyed as 5,400.00 instead of 8,400.00",
+      "scenario_id": "S2",
+      "type": "payment_allocation",
+      "variant": "partial_allocation"
+    },
+    {
+      "issue_id": "XT92KR",
+      "root_cause": "rate of entry date 2026-09-18 used instead of issue date 2026-09-14",
+      "scenario_id": "S3",
+      "type": "fx_rate",
+      "variant": "rate_of_entry_date"
+    },
+    {
+      "issue_id": "7F7V0Z",
+      "root_cause": "revenue of 2026-10-01 posted on 2026-09-30",
+      "scenario_id": "S4",
+      "type": "period_cutoff",
+      "variant": "pulled_into_period"
+    },
+    {
+      "issue_id": "XG1494",
+      "root_cause": "bank UTC date used as posting date",
+      "scenario_id": "C1",
+      "type": "period_cutoff",
+      "variant": "utc_date_as_posting_date"
+    },
+    {
+      "issue_id": "ZHB4FR",
+      "root_cause": "rate of the wrong posting date",
+      "scenario_id": "C1",
+      "type": "fx_rate",
+      "variant": "rate_follows_wrong_posting_date"
+    },
+    {
+      "issue_id": "MTSP56",
+      "root_cause": "allocation keyed as 6,500.00",
+      "scenario_id": "C1",
+      "type": "payment_allocation",
+      "variant": "partial_allocation"
+    },
+    {
+      "issue_id": "C1V8ZA",
+      "root_cause": "bill keyed twice, payment applied to the second copy",
+      "scenario_id": "C2",
+      "type": "duplicate_invoice",
+      "variant": "duplicate_then_paid"
+    }
+  ],
+  "seed": 20260919,
+  "twins": [
+    {
+      "distinguishing_feature": "bank amount is less than invoice, whole payment allocated",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/EY31ZP",
+        "payment/7VZYZY"
+      ],
+      "twin_id": "TW-ALLOC-PARTIAL"
+    },
+    {
+      "distinguishing_feature": "two payments, each fully allocated, FX diff on each",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/Q4V1X2",
+        "payment/QPD38T",
+        "payment/WHD1JM"
+      ],
+      "twin_id": "TW-ALLOC-SPLIT"
+    },
+    {
+      "distinguishing_feature": "no remittance reference, amount matches no open item",
+      "mimics": "payment_allocation",
+      "records": [
+        "payment/GDSY3H"
+      ],
+      "twin_id": "TW-ALLOC-UNIDENTIFIED"
+    },
+    {
+      "distinguishing_feature": "payment is fully allocated to the copy, the only issue is the duplicate",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/RRH8VY",
+        "payment/AM952T"
+      ],
+      "twin_id": "TW-C2-TRAP"
+    },
+    {
+      "distinguishing_feature": "entered two days late, posting date follows the document",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/39487B"
+      ],
+      "twin_id": "TW-CUT-LAG"
+    },
+    {
+      "distinguishing_feature": "UTC and vendor date is Sep 30, company local date is Oct 1",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/WBDSQ3"
+      ],
+      "twin_id": "TW-CUT-TZ"
+    },
+    {
+      "distinguishing_feature": "different vendor_ref and service period",
+      "mimics": "duplicate_invoice",
+      "records": [
+        "invoice/G0QJMF",
+        "invoice/P18WZP"
+      ],
+      "twin_id": "TW-DUP-SUB"
+    },
+    {
+      "distinguishing_feature": "issued Saturday, rate of previous business day per policy",
+      "mimics": "fx_rate",
+      "records": [
+        "invoice/P18WZP"
+      ],
+      "twin_id": "TW-FX-WEEKEND"
+    }
+  ]
+}

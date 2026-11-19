@@ -1,0 +1,8 @@
+counterparty_id,name,role,utc_offset
+5N6CKK,Northwind Freight GmbH,vendor,+02:00
+9KSZCC,Wingtip Toys GmbH,customer,+02:00
+BW2C75,Fabrikam Inc,customer,+05:00
+ECJRSX,Tailspin Hosting LLP,vendor,+05:00
+G5R1W0,Wide World Importers,vendor,+05:00
+Q5Q4BT,Adventure Works LLC,customer,+03:00
+YTB3KB,Contoso Ltd,customer,+00:00
