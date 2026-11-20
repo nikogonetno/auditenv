@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from .book import (PAYABLE, UNAPPLIED, BookError, event_time, is_carrying, is_clearing, minor, normalize_ref,
                    parse_rate, row_base)
+from .ids import normalize_id
 
 
 def _only(items, table, what):
@@ -61,7 +62,7 @@ def _allocation(items, policy):
     payment = _only(items, "payments", "payment")
     bill = _only(items, "invoices", "bill")
     pid, iid = payment["payment_id"], bill["invoice_id"]
-    if iid not in (payment.get("invoice_refs") or []):
+    if iid not in {normalize_id(r) for r in payment.get("invoice_refs") or [] if type(r) is str}:
         raise BookError(f"payment {pid} does not refer to bill {iid}")
     rows = _ledger(items)
     clearing = [r for r in rows if is_clearing(r) and r["payment_id"] == pid and r["invoice_id"] == iid]

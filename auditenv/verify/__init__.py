@@ -2,7 +2,8 @@
 
 Checks that truth.json follows from the public records and policy.json alone: its own detector of the
 rules INV-13…INV-16 must find exactly the truth issues (INV-18), every evidence set must give the amount
-(INV-17), and the book, truth and public files must keep INV-01…INV-06, 08…10, 12, 20, 23 and QA D-4.
+(INV-17), and the book, truth and public files must keep INV-01…INV-06, 08…10, 12, 20 and 23. Two truth
+issues with one type and affected set (QA D-4) are an INV-18 problem, SPEC §6.
 Written from SPEC §3, §5, §6, case §03 and §05 and the policy rules of the domain spec A only.
 """
 import json
@@ -49,7 +50,6 @@ def verify_episode(episode_dir: str, strict_volume: bool = True) -> list[dict]:
     run("INV-17", lambda: checks.check_inv17(state["issues"], book, problems))
     run("INV-18", lambda: checks.check_inv18(state["issues"], state["violations"], book, problems))
     run("INV-20", lambda: checks.check_inv20(state["issues"], problems))
-    run("D-4", lambda: checks.check_d4(state["issues"], book, problems))
     run("INV-23", lambda: checks.check_inv23(episode_dir, state["issues"], problems))
     return problems
 

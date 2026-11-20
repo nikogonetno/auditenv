@@ -5,6 +5,7 @@ detector of the policy rules INV-13…INV-16, so a change in the public files al
 violation that truth does not list, and a change in truth alone must show up as an issue the detector
 does not see.
 """
+import ast
 import csv
 import json
 import shutil
@@ -15,6 +16,7 @@ import unittest
 from pathlib import Path
 
 from auditenv.verify import verify_episode
+from auditenv.verify.ids import normalize_id
 from tests.support import run_python
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -109,6 +111,7 @@ class VerifyMini(unittest.TestCase):
         # C1: period and fx on the same 1030 row; the type must take part in the match.
         self.edit_truth(lambda t: self.issue(t, "ZHB4FR").update(type="period_cutoff"))
         details = self.details("INV-18")
+        self.assertIn("duplicate truth issue: XG1494 and ZHB4FR are both period_cutoff on ['Z3H7BB']", details)
         self.assertTrue(any("ZHB4FR" in d for d in details))
         self.assertTrue(any("fx_rate" in d and "Z3H7BB" in d and "ZHB4FR" not in d for d in details))
 
@@ -259,18 +262,31 @@ class VerifyMini(unittest.TestCase):
         [detail] = self.details("INV-13")
         self.assertIn("A12BT6", detail)
 
-    # --- INV-20 and D-4: truth itself -----------------------------------------------------------
+    # --- INV-20 and QA D-4: truth itself -------------------------------------------------------
 
     def test_amount_not_above_two_tolerances_is_inv20(self):
         self.edit_truth(lambda t: self.issue(t, "XT92KR").update(tolerance_minor=635000))
         self.assertEqual(self.codes(), {"INV-20"})
 
-    def test_repeated_issue_in_truth_is_d4(self):
+    def test_repeated_issue_in_truth_is_inv18(self):
+        # QA D-4: SPEC §6 puts a repeated (type, affected_ids) under INV-18, oracle would get 0.882.
         def repeat(truth):
             copy = dict(self.issue(truth, "G21S27"), issue_id="Z11111")
             truth["issues"].append(copy)
         self.edit_truth(repeat)
-        self.assertIn("D-4", self.codes())
+        self.assertEqual(self.codes(), {"INV-18"})
+        [detail] = self.details("INV-18")
+        self.assertTrue(detail.startswith("duplicate truth issue: "), detail)
+        self.assertIn("G21S27", detail)
+        self.assertIn("Z11111", detail)
+
+    def test_repeated_issue_with_other_id_spelling_is_inv18(self):
+        def repeat(truth):
+            copy = dict(self.issue(truth, "G21S27"), issue_id="Z11111", affected_ids=["F7SF66", "doc/WRJD8T"])
+            truth["issues"].append(copy)
+        self.edit_truth(repeat)
+        self.assertEqual(self.codes(), {"INV-18"})
+        self.assertTrue(self.details("INV-18")[0].startswith("duplicate truth issue: "))
 
     def test_clean_flag_must_match_issues(self):
         self.edit_truth(lambda t: t.update(clean=True))
@@ -339,6 +355,52 @@ class VerifyMini(unittest.TestCase):
         self.assertEqual(zero.returncode, 1, zero.stderr)
         self.assertGreater(len(zero.stdout.splitlines()), 3)
         self.assertEqual(zero.stdout, one.stdout)
+
+
+class OwnIdNormalization(unittest.TestCase):
+    """N-5: the verifier normalizes ids itself (SPEC §3.3, §5.2) and must agree with the grader."""
+
+    CASES = (
+        "invoice/1TNM24", "1TNM24", "payment/WFV9R1", "ledger/NP7DTC", "allocation/A1", "counterparty/C1",
+        "line/L1", "fx/X2MWG8", "fx/2026-09-14/USD/KZT", "doc/WRJD8T", "je/A12BT6", "je/", "je",
+        "invoice/invoice/1TNM24", "doc/invoice/1TNM24", "ledger/fx/X2MWG8", "unknown/ABC", "vendor/ABC",
+        "Invoice/ABC", "INVOICE/ABC", "invoice/abc", "abc123", "invoice/", "fx/", "/ABC", "//", "/", "",
+        "invoice", "invoice//X", " invoice/X", "invoice/ X", "invoice\\X", "a/b/c", "доc/X",
+    )
+
+    def test_same_as_grader(self):
+        from auditenv.grader import normalize_id as grader_normalize
+        for ref in self.CASES:
+            with self.subTest(ref=ref):
+                self.assertEqual(normalize_id(ref), grader_normalize(ref))
+
+    def test_spec_examples(self):
+        self.assertEqual(normalize_id("fx/2026-09-14/USD/KZT"), "2026-09-14/USD/KZT")
+        self.assertEqual(normalize_id("invoice/invoice/X"), "invoice/X")
+        self.assertEqual(normalize_id("je/X"), "je/X")
+        self.assertEqual(normalize_id("Invoice/X"), "Invoice/X")
+        self.assertEqual(normalize_id("invoice/"), "invoice/")
+
+    def test_verifier_imports_neither_grader_nor_generator(self):
+        allowed_outside = {"auditenv.episode"}
+        for path in sorted((ROOT / "auditenv" / "verify").glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    if node.level == 0:
+                        names = [node.module]
+                    else:
+                        base = ["auditenv", "verify"][:3 - node.level]
+                        names = [".".join(base + ([node.module] if node.module else []))]
+                else:
+                    continue
+                for name in names:
+                    with self.subTest(file=path.name, module=name):
+                        if name == "auditenv" or name.startswith("auditenv."):
+                            self.assertTrue(name in allowed_outside or name == "auditenv.verify"
+                                            or name.startswith("auditenv.verify."), name)
 
 
 if __name__ == "__main__":

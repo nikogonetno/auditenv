@@ -9,10 +9,9 @@ import re
 from decimal import Decimal
 
 from ..episode import load_episode
+from .ids import normalize_id, split_id
 
 ISSUE_TYPES = ("duplicate_invoice", "payment_allocation", "fx_rate", "period_cutoff")
-# SPEC §3.3: the eight table prefixes a reference may carry. Stripped once, everything else as is.
-KNOWN_PREFIXES = ("allocation", "counterparty", "doc", "fx", "invoice", "ledger", "line", "payment")
 PREFIX_TABLE = {"invoice": "invoices", "payment": "payments", "ledger": "ledger", "fx": "fx"}
 
 BANK, RECEIVABLE, PAYABLE, UNAPPLIED = "1030", "1210", "3310", "3510"
@@ -28,14 +27,6 @@ _NOT_ALNUM = re.compile(r"[^A-Z0-9]")
 
 class BookError(ValueError):
     """A value the verifier cannot read. Reported as a problem, never raised to the caller."""
-
-
-def split_ref(ref):
-    """'invoice/1TNM24' -> ('invoice', '1TNM24'); a bare or unknown-prefix id keeps prefix None."""
-    head, sep, tail = ref.partition("/")
-    if sep and head in KNOWN_PREFIXES:
-        return head, tail
-    return None, ref
 
 
 def normalize_ref(text):
@@ -199,12 +190,12 @@ class Book:
         """Canonical record id of a reference: known prefix stripped once, doc_id mapped to its record."""
         if type(ref) is not str:
             raise BookError(f"reference is not a string: {ref!r}")
-        _, rid = split_ref(ref)
+        rid = normalize_id(ref)
         return self.aliases.get(rid, rid)
 
     def resolve(self, ref):
         """(table, record) for a reference, or BookError. ID are unique across tables (SPEC §3.3)."""
-        prefix, rid = split_ref(ref) if type(ref) is str else (None, None)
+        prefix, rid = split_id(ref) if type(ref) is str else (None, None)
         if rid is None or ref.startswith("je/"):
             raise BookError(f"unresolvable reference {ref!r}")
         rid = self.aliases.get(rid, rid)
