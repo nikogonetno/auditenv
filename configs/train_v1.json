@@ -1,0 +1,97 @@
+{
+  "version": "train_v1",
+  "split": "train",
+  "comment": "Versioned episode configs (docs/tasks/B_next.md items 9-10). Seeds: train 1000-1999, dev 2000-2999, others reserved. Mix like the jury set: some clean companies, some with coupled scenarios C1/C2, 1-12 errors otherwise. Build with: python3 scripts/build_episodes.py train",
+  "episodes": [
+    {
+      "seed": 1000,
+      "config": {}
+    },
+    {
+      "seed": 1001,
+      "config": {
+        "errors": {}
+      }
+    },
+    {
+      "seed": 1002,
+      "config": {
+        "errors": {},
+        "scenarios": {
+          "C1": 1
+        }
+      }
+    },
+    {
+      "seed": 1003,
+      "config": {
+        "errors": {
+          "payment_allocation": 1
+        },
+        "scenarios": {
+          "C2": 1
+        }
+      }
+    },
+    {
+      "seed": 1004,
+      "config": {
+        "errors": {
+          "duplicate_invoice": 2,
+          "fx_rate": 1
+        }
+      }
+    },
+    {
+      "seed": 1005,
+      "config": {
+        "errors": {},
+        "foreign_pct": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "seed": 1006,
+      "config": {
+        "errors": {
+          "period_cutoff": 2,
+          "payment_allocation": 1
+        }
+      }
+    },
+    {
+      "seed": 1007,
+      "config": {
+        "errors": {
+          "fx_rate": 1
+        },
+        "scenarios": {
+          "C1": 1,
+          "C2": 1
+        }
+      }
+    },
+    {
+      "seed": 1008,
+      "config": {
+        "errors": {
+          "duplicate_invoice": 1,
+          "payment_allocation": 2,
+          "fx_rate": 1,
+          "period_cutoff": 2
+        }
+      }
+    },
+    {
+      "seed": 1009,
+      "config": {
+        "errors": {
+          "fx_rate": 2
+        },
+        "period": "2026-12"
+      }
+    }
+  ]
+}

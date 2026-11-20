@@ -3,7 +3,7 @@ N ?= 300
 IMAGE ?= auditenv:dev
 GOLDEN := tests/fixtures/golden_v0.1/episode
 
-.PHONY: verify test qa demo stress docker-build docker-verify clean
+.PHONY: verify test qa demo stress episodes docker-build docker-verify clean
 
 # The one command. Same script is the default CMD of the Docker image.
 verify:
@@ -30,6 +30,11 @@ demo:
 # Generator stress test (docs/tasks/B_next.md item 7): N seeds, verifier, oracle 1.0, 60 s, determinism.
 stress:
 	$(PY) scripts/stress.py --n $(N)
+
+# Open train and dev episodes (case §09) from configs/train_v1.json and configs/dev_v1.json.
+episodes:
+	$(PY) scripts/build_episodes.py train
+	$(PY) scripts/build_episodes.py dev
 
 docker-build:
 	docker build -t $(IMAGE) .
