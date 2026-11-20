@@ -1,4 +1,5 @@
 """Generator stage 1 (docs/tasks/A_generator.md): clean world, duplicate_invoice and payment_allocation."""
+import csv
 import hashlib
 import json
 import re
@@ -106,6 +107,81 @@ class Generated(unittest.TestCase):
         self.assertEqual(named, sorted(i["issue_id"] for i in truth["issues"]))
         self.assertTrue(all(inj["changes"] for inj in provenance["injections"]))
         self.assertEqual(json.loads((out / "public" / "policy.json").read_text())["fx"]["weekend_days"], [6, 7])
+
+
+class Realism(unittest.TestCase):
+    """Findings of the stage-1 review (21.11): the data must not give errors away by one field, and the
+    declared rounding must actually round."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.episodes = []
+        for seed in range(12):
+            out = Path(cls.tmp.name) / str(seed)
+            generate_episode(100 + seed, {"errors": {"duplicate_invoice": 2, "payment_allocation": 2}}, str(out))
+            cls.episodes.append(out)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def read(self, out, name):
+        return [json.loads(line) for line in (out / "public" / name).read_text(encoding="utf-8").splitlines()]
+
+    def created(self, out):
+        provenance = json.loads((out / "private" / "provenance.json").read_text(encoding="utf-8"))
+        return {c["record"].split("/")[1] for inj in provenance["injections"] for c in inj["changes"]
+                if c["after"] == "created"}
+
+    def test_copy_reference_format_also_occurs_in_clean_bills(self):
+        from auditenv.world import ref_shape
+        hits = total = 0
+        for out in self.episodes:
+            created = self.created(out)
+            bills = [i for i in self.read(out, "invoices.jsonl") if i["direction"] == "AP"]
+            clean = {ref_shape(i["vendor_ref"]) for i in bills if i["invoice_id"] not in created}
+            for bill in bills:
+                if bill["invoice_id"] in created:
+                    total += 1
+                    hits += ref_shape(bill["vendor_ref"]) in clean
+        self.assertGreaterEqual(hits, total - 1)
+
+    def test_clean_payments_also_cite_two_documents(self):
+        for out in self.episodes[:4]:
+            created = self.created(out)
+            multi = [p for p in self.read(out, "payments.jsonl")
+                     if p["invoice_refs"] and len(p["invoice_refs"]) > 1 and not created & set(p["invoice_refs"])]
+            with self.subTest(out=out.name):
+                self.assertTrue(multi)
+
+    def test_conversions_round(self):
+        from decimal import Decimal
+        inexact = 0
+        for out in self.episodes:
+            with open(out / "public" / "ledger.csv", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+            for row in rows:
+                product = Decimal(row["doc_amount_minor"]) * Decimal(row["exchange_rate"])
+                inexact += product != product.to_integral_value()
+        self.assertGreater(inexact, 0)
+
+
+class Capacity(unittest.TestCase):
+    def test_capacity_depends_on_the_config_not_on_the_seed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for seed in range(25):
+                generate_episode(seed, {"documents": [20, 200], "errors": {"payment_allocation": 12}},
+                                 str(Path(tmp) / str(seed)))
+                with self.assertRaises(ValueError):
+                    generate_episode(seed, {"documents": [20, 30], "errors": {"payment_allocation": 12}},
+                                     str(Path(tmp) / f"bad{seed}"))
+
+    def test_minus_zero_offset_is_written_as_utc(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            generate_episode(3, {"company_offsets": ["-00:00"], "errors": {}}, tmp)
+            texts = [p.read_text(encoding="utf-8") for p in (Path(tmp) / "public").iterdir()]
+            self.assertFalse(any("-00:00" in t for t in texts))
 
 
 class Determinism(unittest.TestCase):

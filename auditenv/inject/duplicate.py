@@ -1,45 +1,55 @@
 """duplicate_invoice, variant same_vendor_ref_reformatted (docs/DOMAIN_SPEC_A.md, scenario 1).
 
-A vendor bill is keyed a second time by another clerk a few days later, with the vendor's reference
-typed in another format. The copy has the same counterparty, currency, lines, service period and
-issued_at, and is posted by the normal rules, so its posting date and rate are right.
+A vendor bill is keyed a second time by another clerk, with the vendor's reference typed with other
+separators. The copy has the same counterparty, currency, lines, service period and issued_at, and is
+posted by the normal rules, so its posting date and rate are right. Its reference format is one the clean
+bills of the episode also show, and its entry delay follows the clean distribution, so neither field alone
+gives the copy away (domain spec A: «формат копии встречается и в чистых данных», INV-21).
 """
 import copy
-import datetime as dt
-import re
 
-from ..world import VENDOR_KINDS, norm_ref
+from ..world import VENDOR_KINDS, entered_time, ref_shape, ref_variants
 
 VARIANT = "same_vendor_ref_reformatted"
 
 
-def reformat(rng, ref):
-    """The same reference as another clerk types it: equal after normalization, different as text."""
-    head = re.match(r"[A-Za-z]+", ref).group(0)
-    tail = ref[len(head):].lstrip("- ")
-    plain_tail = re.sub(r"[^A-Za-z0-9]", "", tail)
-    options = {ref.replace("-", "").replace(" ", ""), ref.replace("-", " "), ref.replace(" ", "-"),
-               f"{head}-{plain_tail}", f"{head} {plain_tail}", f"{head}{plain_tail}"}
-    options = sorted(o for o in options if o != ref and norm_ref(o) == norm_ref(ref))
-    return rng.choice(options)
+def reformat(rng, world, bill):
+    """The bill's reference as another clerk keys it: other separators, preferably a shape this vendor's
+    other bills already show, else one any clean bill shows."""
+    style = world.counterparties[bill.cp].style
+    options = [v for v in ref_variants(bill.ref_parts, style) if v != bill.vendor_ref]
+    others = [i for i in world.invoices.values() if i.direction == "AP" and i.key != bill.key]
+    vendor = {ref_shape(i.vendor_ref) for i in others if i.cp == bill.cp}
+    seen = {ref_shape(i.vendor_ref) for i in others}
+    return rng.choice([v for v in options if ref_shape(v) in vendor]
+                      or [v for v in options if ref_shape(v) in seen] or options)
 
 
 def inject(rng, world, used):
-    """(variant, cause, [affected keys], documents touched). ValueError when no bill can be copied."""
+    """(variant, cause, [affected keys], documents touched). ValueError when no bill can be copied.
+
+    Touched documents include the payments whose remittance cites the original: the copy has the same
+    normalized reference, so it joins their invoice_refs.
+    """
+    cited_by = {}
+    for pay in world.payments.values():
+        for key in world.invoice_refs(pay) or ():
+            cited_by.setdefault(key, []).append(pay.key)
     candidates = [i for i in world.invoices.values()
-                  if i.direction == "AP" and i.key not in used and not VENDOR_KINDS[world.counterparties[i.cp].kind][2]]
+                  if i.direction == "AP" and i.key not in used and not VENDOR_KINDS[world.counterparties[i.cp].kind][2]
+                  and not used.intersection(cited_by.get(i.key, ()))]
     if not candidates:
         raise ValueError("config: no vendor bill left for duplicate_invoice")
     bill = rng.choice(candidates)
+    citing = sorted(cited_by.get(bill.key, ()))
     twin = copy.deepcopy(bill)
     twin.key = world.new_key("I")
     for line in twin.lines:
         line.key = world.new_key("N")
-    twin.vendor_ref = reformat(rng, bill.vendor_ref)
+    twin.vendor_ref = reformat(rng, world, bill)
     event = bill.issued_at.astimezone(world.tz)
-    lag = (bill.entered_at.date() - event.date()).days
-    day = event.date() + dt.timedelta(days=rng.randint(min(lag + 1, 10), 10))
-    twin.entered_at = dt.datetime.combine(day, dt.time(rng.randint(9, 18), rng.randint(0, 59)), world.tz)
+    twin.entered_at = entered_time(rng, world, event)
     world.invoices[twin.key] = twin
-    cause = f"vendor bill keyed twice, the copy {(day - event.date()).days} days after issue with the reference retyped"
-    return VARIANT, cause, [(bill.key, twin.key)], {bill.key, twin.key}
+    days = (twin.entered_at.date() - event.date()).days
+    cause = f"vendor bill keyed twice, the copy {days} days after issue with the reference retyped"
+    return VARIANT, cause, [(bill.key, twin.key)], {bill.key, twin.key, *citing}

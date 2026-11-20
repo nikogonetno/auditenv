@@ -4,7 +4,10 @@ A customer pays one invoice in full and cites it, but the clerk keys a smaller a
 the receipt goes to 3510 at the payment rate. The entry stays balanced and the allocation agrees with
 its ledger rows: the error shows only against the bank amount and the invoice.
 """
+from ..world import BASE
+
 VARIANT = "partial_allocation"
+REST_PCT = (5, 60)                # overlaps the excess of clean overpayments, so the share alone tells nothing
 
 
 def inject(rng, world, used):
@@ -24,12 +27,21 @@ def inject(rng, world, used):
         raise ValueError("config: no fully paid customer invoice left for payment_allocation")
     pay = rng.choice(candidates)
     inv_key, amount = pay.alloc[0]
-    # The rest must not look like the payment of another open item of this customer.
-    other_totals = {i.total_minor for i in world.invoices.values()
-                    if i.cp == pay.cp and i.currency == pay.currency and i.key != inv_key}
-    rest = max(amount * rng.randint(20, 60) // 100 // 100 * 100, 100)
-    while rest in other_totals:
-        rest += 100
+    # The rest must not look like the payment of another item of this customer: neither its total nor
+    # what is still open on it (domain spec A, variant table).
+    allocated = {}
+    for other in world.payments.values():
+        for key, part in other.alloc:
+            allocated[key] = allocated.get(key, 0) + part
+    lookalikes = set()
+    for inv in world.invoices.values():
+        if inv.cp == pay.cp and inv.currency == pay.currency and inv.key != inv_key:
+            lookalikes |= {inv.total_minor, inv.total_minor - allocated.get(inv.key, 0)}
+    rest = amount * rng.randint(*REST_PCT) // 100
+    step = 100 if pay.currency == BASE else 1
+    rest = max(rest // step * step, step)
+    while rest in lookalikes:
+        rest += step
     if not 2 < rest < amount:
         raise ValueError("config: receipt too small for payment_allocation")
     pay.alloc = [(inv_key, amount - rest)]

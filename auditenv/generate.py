@@ -308,18 +308,15 @@ def _changes(world, clean_book, final, book, ids, injections):
     owner = {}
     for n, inj in enumerate(injections):
         for doc in inj.docs:
+            if doc in owner:
+                raise WorldError(f"{doc} touched by two injections")
             owner[doc] = n
-    key_of = {public: key for key, public in ids.record.items()}
     changes = [[] for _ in injections]
     for key in sorted(set(before) | set(after)):
         doc = (after.get(key) or before.get(key))[0]
         old, new = (before.get(key) or (None, None))[1], (after.get(key) or (None, None))[1]
         if old == new:
             continue
-        if doc not in owner and old and new and {f for f in old if old[f] != new.get(f)} == {"invoice_refs"}:
-            # A new bill that the remittance text also names (a duplicate) adds itself to invoice_refs.
-            named = set(old["invoice_refs"] or ()) ^ set(new["invoice_refs"] or ())
-            doc = next((key_of[i] for i in sorted(named) if key_of[i] in owner), doc)
         if doc not in owner:
             raise WorldError(f"{key} changed by no injection")
         ref = ids.ref(key)
@@ -348,8 +345,8 @@ def _twins(final, ids, targets):
         if doc.currency != BASE and not final.rates.is_business(local):
             found.append({"kind": "weekend_document", "mimics": "fx_rate", "records": [doc.key],
                           "feature": "dated on a non-business day, rate of the previous business day by the policy"})
-        own = when.date()
-        if (final.period_start <= own <= final.period_end) != in_period:
+        others = (when.date(), when.astimezone(dt.timezone.utc).date())   # issuer's and UTC calendar date
+        if any((final.period_start <= day <= final.period_end) != in_period for day in others):
             found.append({"kind": "midnight_utc", "mimics": "period_cutoff", "records": [doc.key],
                           "feature": "the issuer or UTC date is in another period than the company-local date"})
         if in_period and doc.entered_at.astimezone(tz).date() > final.period_end:

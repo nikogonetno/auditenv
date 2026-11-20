@@ -14,7 +14,7 @@ import copy
 import datetime as dt
 import re
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Context, Decimal
 
 BASE = "KZT"
 FOREIGN = ("CNY", "EUR", "RUB", "USD")
@@ -26,8 +26,20 @@ HOLIDAYS = tuple(dt.date.fromisoformat(d) for d in (
     "2026-03-24", "2026-05-01", "2026-05-07", "2026-05-11", "2026-07-06", "2026-08-31", "2026-10-26",
     "2026-12-16", "2026-12-17", "2027-01-01", "2027-01-07"))
 WINDOW_DAYS = 7
-NEIGHBOUR_INVOICES = 6                   # per side of the period: 12 rows, INV-03 asks for 10
+NEIGHBOUR_INVOICES = 8                   # per side of the period: 16 rows, INV-03 asks for 10
 RATE_LEAD_DAYS = 14                      # rates start this many days before the window
+RATE_TAIL_DAYS = 14                      # and run past it, so every entered_at date has a rate
+# Clean-world shares, domain spec A world table.
+BEHAVIOURS = ("on_time", "late", "partial", "split", "overpay", "partial_then_full")
+BEHAVIOUR_WEIGHTS = (58, 25, 7, 5, 2, 3)
+SUBSCRIPTION_PCT = (20, 40)              # share of vendor bills that repeat monthly with one amount
+AP_SHARE_OF_DOCUMENTS = 0.45             # calibrated: the measured monthly share lands in SUBSCRIPTION_PCT
+BILLS_PER_CONTRACT = 1.45                # a 44-day window holds one or two bills of a monthly contract
+COMBINED_AR_SHARE = 0.05                 # a customer pays two invoices with one payment
+COMBINED_AP_SHARE = 0.08                 # we pay two bills of one vendor with one payment
+CLERK_RETYPE_SHARE = 0.2                 # bills whose vendor reference the clerk keyed with other separators
+CENTS_SHARE_FOREIGN, CENTS_SHARE_BASE = 0.5, 0.2
+_DECIMAL = Context(prec=34, rounding=ROUND_HALF_UP)
 
 # Rate random walk in hundredths of KZT per unit: start level, daily step, floor.
 RATE_WALK = {"CNY": (7090, 30, 5000), "EUR": (59800, 240, 40000), "RUB": (562, 4, 300), "USD": (51200, 220, 35000)}
@@ -64,9 +76,14 @@ VENDOR_KINDS = {
     "freight": ("7110", ("Line haul {a}-{b}", "Rail freight {a}-{b}", "Trucking services"), False),
     "warehouse": ("7110", ("Warehouse services", "Pallet storage", "Loading and unloading"), False),
     "office": ("7210", ("Office supplies", "Printer maintenance", "Courier services"), False),
-    "hosting": ("7210", ("Hosting subscription",), True),
-    "rent": ("7210", ("Office rent",), True),
+    "hosting": ("7210", ("Hosting subscription", "Backup storage subscription", "Software licences, monthly"), True),
+    "rent": ("7210", ("Office rent", "Warehouse rent", "Parking rent"), True),
+    "telecom": ("7210", ("Internet and telephony", "Mobile communication"), True),
+    "security": ("7210", ("Security services", "Office cleaning"), True),
+    "leasing": ("7110", ("Truck leasing", "Forklift rental"), True),
 }
+MONTHLY_KINDS = tuple(sorted(k for k, v in VENDOR_KINDS.items() if v[2]))
+ONE_OFF_KINDS = ("freight", "freight", "warehouse", "office")
 # Well-known fictional names only, so no record matches a real company. No digits in any name.
 CUSTOMER_NAMES = (
     "Contoso Ltd", "Fabrikam Inc", "Adventure Works LLC", "Wingtip Toys GmbH", "Litware Inc", "Proseware LLC",
@@ -80,11 +97,14 @@ VENDOR_NAMES = (
     ("Consolidated Messenger LLP", "CM"), ("Coho Storage LLP", "CHS"), ("Woodgrove Office Supply", "WOS"),
     ("Northwind Traders", "NWT"), ("Tailwind Logistics", "TWL"), ("Fabrikam Rail Cargo", "FRC"),
     ("Litware Cloud Services", "LCS"), ("Proseware Facilities", "PWF"), ("Humongous Haulage", "HH"),
-    ("Margie Travel LLP", "MT"), ("Graphic Design Institute", "GDI"))
+    ("Margie Travel LLP", "MT"), ("Graphic Design Institute", "GDI"), ("Blue Yonder Telecom", "BYT"),
+    ("Alpine Security LLP", "ASL"), ("Contoso Leasing", "CL"), ("Lucerne Property LLP", "LP"))
 UNKNOWN_PAYERS = ("ALPINE SKI HOUSE", "CITY POWER AND LIGHT", "SCHOOL OF FINE ART", "TREY RESEARCH FUND")
 UNKNOWN_TEXTS = ("OPLATA", "OPLATA PO DOGOVORU", "TRANSFER", "PREDOPLATA")
 COUNTERPARTY_OFFSETS = ("+00:00", "+01:00", "+02:00", "+03:00", "+05:00", "+06:00", "+08:00")
-REF_STYLES = ("dash", "plain", "space", "short")
+# How a vendor prints its references: separator after the prefix, separator after the year (None: no
+# year), digits of the number. dash NWF-2026-0418, plain NWF20260418, space WWI 07781, short CM-0412.
+REF_STYLES = {"dash": ("-", "-", 4), "plain": ("", "", 4), "space": (" ", None, 5), "short": ("-", None, 4)}
 
 
 class WorldError(RuntimeError):
@@ -92,6 +112,11 @@ class WorldError(RuntimeError):
 
 
 # ---------------------------------------------------------------- time, money and rates
+def canonical_offset(offset):
+    """'-00:00' and '+00:00' are one offset; write it the way isoformat() writes UTC."""
+    return "+00:00" if offset == "-00:00" else offset
+
+
 def tz_of(offset):
     sign = -1 if offset[0] == "-" else 1
     return dt.timezone(sign * dt.timedelta(hours=int(offset[1:3]), minutes=int(offset[4:6])))
@@ -99,7 +124,8 @@ def tz_of(offset):
 
 def conv(doc_minor, rate):
     """base_minor = round_half_up(doc_minor x rate). Every currency here has 2 minor units."""
-    return int((Decimal(doc_minor) * Decimal(rate)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    return int(_DECIMAL.multiply(Decimal(doc_minor), Decimal(rate)).quantize(Decimal(1), rounding=ROUND_HALF_UP,
+                                                                              context=_DECIMAL))
 
 
 def norm_ref(text):
@@ -192,7 +218,8 @@ class Invoice:
     currency: str
     lines: list
     number: str = None            # AR invoice_number
-    vendor_ref: str = None        # AP reference of the vendor
+    vendor_ref: str = None        # AP reference of the vendor, as our clerk keyed it
+    ref_parts: tuple = None       # AP (prefix, year, number) of that reference
     po_ref: str = None
     service_from: str = None
     service_to: str = None
@@ -533,7 +560,7 @@ def check_book(world, book, expected_violations, moved_docs=()):
 
 
 # ---------------------------------------------------------------- the clean history
-def _local_time(rng, world, day, near_midnight_share=0.05):
+def local_time(rng, world, day, near_midnight_share=0.05):
     """A company-local moment on `day`: business hours, about 5% within half an hour of midnight."""
     if rng.random() < near_midnight_share:
         minute = rng.choice([rng.randint(0, 29), rng.randint(23 * 60 + 30, 23 * 60 + 59)])
@@ -542,8 +569,9 @@ def _local_time(rng, world, day, near_midnight_share=0.05):
     return dt.datetime.combine(day, dt.time(minute // 60, minute % 60), world.tz)
 
 
-def _entered(rng, world, event_local):
-    """When the clerk keyed the document: 0 to 10 days later, never before the event."""
+def entered_time(rng, world, event_local):
+    """When a clerk keyed the document: 0 to 10 days later, never before the event. One distribution for
+    clean and erroneous records (domain spec A, «Задержка внесения в учёт»)."""
     lag = rng.choices((0, rng.randint(1, 3), rng.randint(4, 10)), weights=(50, 30, 20))[0]
     day = event_local.date() + dt.timedelta(days=lag)
     when = dt.datetime.combine(day, dt.time(rng.randint(9, 18), rng.randint(0, 59)), world.tz)
@@ -552,58 +580,84 @@ def _entered(rng, world, event_local):
     return when
 
 
+def _price(rng, currency, major):
+    """A unit price in minor units: often with cents in foreign currency, sometimes with tiyn in KZT, so
+    that conversions round and the residual rule of the last allocation matters."""
+    if rng.random() < (CENTS_SHARE_FOREIGN if currency != BASE else CENTS_SHARE_BASE):
+        return max(major, 1) * 100 + rng.randint(1, 99)
+    step = 1000 if major >= 100_000 else 10 if major >= 1000 else 1
+    return max(major // step * step, 1) * 100
+
+
 def _amount_lines(rng, world, currency, descriptions, fixed_total=None):
     low, high = TOTAL_RANGE[currency]
     count = 1 if fixed_total else rng.choices((1, 2, 3), weights=(60, 30, 10))[0]
     lines = []
-    for n in range(count):
+    for _ in range(count):
         if fixed_total:
             qty, unit = 1, fixed_total
         else:
             qty = rng.choice((1, 1, 1, 2, 3, 4, 5, 10))
-            major = rng.randint(low, high) // (qty * count)
-            step = 1000 if major >= 100_000 else 10 if major >= 1000 else 1
-            unit = max(major // step * step, 1) * 100
+            unit = _price(rng, currency, rng.randint(low, high) // (qty * count))
         text = rng.choice(descriptions).format(a=rng.choice(CITIES), b=rng.choice(CITIES))
         lines.append(Line(world.new_key("N"), text, qty, unit))
     return lines
 
 
-def _vendor_ref(cp, issued_local):
-    cp.next_number += 1
-    n, year = cp.next_number, issued_local.year
-    return {"dash": f"{cp.prefix}-{year}-{n:04d}", "plain": f"{cp.prefix}{year}{n:04d}",
-            "space": f"{cp.prefix} {n:05d}", "short": f"{cp.prefix}-{n:04d}"}[cp.style]
+def _part(rng, total, low_pct, high_pct, currency):
+    """A share of `total` strictly between 0 and total: whole tenge in KZT, any minor amount otherwise."""
+    part = total * rng.randint(low_pct, high_pct) // 100
+    if currency == BASE:
+        part = part // 100 * 100
+    return min(max(part, 1), total - 1)
 
 
-class _Numbers:
-    """AR invoice numbers S-<year>-<n> in issue order, and the company's purchase orders."""
-
-    def __init__(self, rng):
-        self.ar = rng.randint(100, 900)
-        self.po = rng.randint(10000, 60000)
+# ---------------------------------------------------------------- vendor references
+def ref_text(prefix, year, number, after_prefix, after_year, width):
+    tail = f"{number:0{width}d}"
+    return prefix + after_prefix + (f"{year}{after_year}{tail}" if after_year is not None else tail)
 
 
-def _add_invoice(rng, world, direction, cp, local_dt, numbers=None, fixed_total=None, service=None):
-    """One invoice dated at the company-local moment `local_dt`."""
+def ref_variants(parts, style):
+    """Every way a clerk may key one vendor reference: the same characters, other separators."""
+    prefix, year, number = parts
+    _, after_year, width = REF_STYLES[style]
+    seps = ("-", " ", "")
+    return sorted({ref_text(prefix, year, number, a, b if after_year is not None else None, width)
+                   for a in seps for b in seps})
+
+
+def ref_shape(text):
+    """Letters as A, digit runs as 9s, separators kept: 'NWF-2026-0418' -> 'A-9999-9999'."""
+    return re.sub(r"[0-9]+", lambda m: "9" * len(m.group()), re.sub(r"[A-Za-z]+", "A", text))
+
+
+def _canonical_ref(cp, parts):
+    after_prefix, after_year, width = REF_STYLES[cp.style]
+    return ref_text(*parts, after_prefix, after_year, width)
+
+
+# ---------------------------------------------------------------- documents and payments
+def _add_invoice(rng, world, direction, cp, local_dt, numbers=None, fixed_total=None, service=None,
+                 description=None):
+    """One invoice dated at the company-local moment `local_dt`. Numbers and vendor references are
+    placeholders until _number_documents numbers everything by issue time."""
     terms = rng.choice((14, 30, 45))
     if direction == "AR":
         lines = _amount_lines(rng, world, cp.currency, INDUSTRIES[world.industry], fixed_total)
-        issued_at = local_dt
-        inv = Invoice(world.new_key("I"), "AR", cp.key, issued_at, _entered(rng, world, local_dt), terms,
+        inv = Invoice(world.new_key("I"), "AR", cp.key, local_dt, entered_time(rng, world, local_dt), terms,
                       cp.currency, lines)
-        inv.service_from = inv.service_to = local_dt.date().isoformat()
+        inv.number = f"@{inv.key}@"
     else:
         account, descriptions, _ = VENDOR_KINDS[cp.kind]
-        lines = _amount_lines(rng, world, cp.currency, descriptions, fixed_total)
-        issued_at = local_dt.astimezone(tz_of(cp.offset))
-        inv = Invoice(world.new_key("I"), "AP", cp.key, issued_at, _entered(rng, world, local_dt), terms,
-                      cp.currency, lines, expense_account=account)
-        inv.vendor_ref = _vendor_ref(cp, local_dt)
+        lines = _amount_lines(rng, world, cp.currency, (description,) if description else descriptions, fixed_total)
+        inv = Invoice(world.new_key("I"), "AP", cp.key, local_dt.astimezone(tz_of(cp.offset)),
+                      entered_time(rng, world, local_dt), terms, cp.currency, lines, expense_account=account)
+        inv.vendor_ref = f"@{inv.key}@"
         if numbers is not None and rng.random() < 0.5:
             numbers.po += rng.randint(1, 7)
             inv.po_ref = f"PO-{numbers.po}"
-        inv.service_from = inv.service_to = local_dt.date().isoformat()
+    inv.service_from = inv.service_to = local_dt.date().isoformat()
     if service:
         inv.service_from, inv.service_to = service
     world.invoices[inv.key] = inv
@@ -614,87 +668,113 @@ def _add_payment(rng, world, direction, cp, local_dt, currency, amount, remittan
     timestamp = local_dt.astimezone(dt.timezone.utc)
     name = raw_name or (cp.name.upper() if rng.random() < 0.5 else cp.name)
     pay = Payment(world.new_key("P"), direction, cp.key if cp else None, name, timestamp,
-                  _entered(rng, world, local_dt), currency, amount, remittance, list(alloc))
+                  entered_time(rng, world, local_dt), currency, amount, remittance, list(alloc))
     world.payments[pay.key] = pay
     return pay
 
 
-def _ar_remittance(rng, inv, cp, kind):
-    if kind == "part":
-        return f"Partial payment {inv.number}"
-    return rng.choice((f"INV {inv.number} {cp.name.upper()}", f"{inv.number}", f"Payment {inv.number}",
-                       f"Oplata po schetu {inv.number}"))
+def _ar_remittance(rng, numbers, cp):
+    """Remittance text of a customer payment citing invoice number placeholders."""
+    cited = ", ".join(numbers)
+    return rng.choice((f"INV {cited} {cp.name.upper()}", cited, f"Payment {cited}", f"Oplata po schetu {cited}"))
 
 
-def _major_round(amount):
-    return max(amount // 100, 1) * 100
+class _Numbers:
+    """First AR invoice number and the company's purchase orders."""
+
+    def __init__(self, rng):
+        self.ar = rng.randint(100, 900)
+        self.po = rng.randint(10000, 60000)
+
+
+def _twin(world, kind, mimics, records, feature):
+    world.twins.append({"kind": kind, "mimics": mimics, "records": list(records), "feature": feature})
 
 
 def _pay_customer(rng, world, inv, budget, behaviour=None):
-    """Payments of one customer invoice that fall inside the window, at most `budget` of them."""
+    """Payments of one customer invoice that fall inside the window, at most `budget` of them.
+    Behaviours follow the domain spec A world table, plus a repeated full payment after a partial one."""
     cp = world.counterparties[inv.cp]
     issued = world.event_date(inv)
-    due = issued + dt.timedelta(days=inv.terms)
-    behaviour = behaviour or rng.choices(("on_time", "late", "partial", "split", "overpay"), weights=(60, 25, 8, 5, 2))[0]
-    total = inv.total_minor
-    if behaviour in ("on_time", "overpay"):
-        day = issued + dt.timedelta(days=rng.randint(1, max(inv.terms, 1)))
-    elif behaviour == "late":
-        day = due + dt.timedelta(days=rng.randint(1, 20))
+    total, ccy = inv.total_minor, inv.currency
+    behaviour = behaviour or rng.choices(BEHAVIOURS, weights=BEHAVIOUR_WEIGHTS)[0]
+    if behaviour == "late":
+        day = issued + dt.timedelta(days=inv.terms + rng.randint(1, 20))
     else:
         day = issued + dt.timedelta(days=rng.randint(1, inv.terms))
-    made = []
     if day > world.window_end or budget <= 0:
-        return made
-    local = _local_time(rng, world, day)
+        return []
+    local = local_time(rng, world, day)
+    cites = _ar_remittance(rng, [inv.number], cp)
+    fx_note = ", FX difference on each" if ccy != BASE else ""
     if behaviour in ("on_time", "late"):
-        made.append(_add_payment(rng, world, "in", cp, local, inv.currency, total, _ar_remittance(rng, inv, cp, "full"),
-                                 [(inv.key, total)]))
-    elif behaviour == "overpay":
-        extra = _major_round(total * rng.randint(1, 5) // 100)
-        made.append(_add_payment(rng, world, "in", cp, local, inv.currency, total + extra,
-                                 _ar_remittance(rng, inv, cp, "full"), [(inv.key, total)]))
-        world.twins.append({"kind": "overpayment", "mimics": "payment_allocation", "records": [inv.key, made[-1].key],
-                            "feature": "payment above the open amount, the excess lies on 3510"})
-    elif behaviour == "partial":
-        part = _major_round(total * rng.randint(30, 80) // 100)
-        made.append(_add_payment(rng, world, "in", cp, local, inv.currency, part, _ar_remittance(rng, inv, cp, "part"),
-                                 [(inv.key, part)]))
-        world.twins.append({"kind": "real_partial_payment", "mimics": "payment_allocation",
-                            "records": [inv.key, made[-1].key],
-                            "feature": "bank amount below the invoice, the whole payment allocated"})
+        return [_add_payment(rng, world, "in", cp, local, ccy, total, cites, [(inv.key, total)])]
+    if behaviour == "overpay":
+        extra = _part(rng, total, 1, 30, ccy)
+        pay = _add_payment(rng, world, "in", cp, local, ccy, total + extra, cites, [(inv.key, total)])
+        _twin(world, "overpayment", "payment_allocation", [inv.key, pay.key],
+              "payment above the open amount, the excess lies on 3510")
+        return [pay]
+    if behaviour == "partial":
+        part = _part(rng, total, 30, 80, ccy)
+        pay = _add_payment(rng, world, "in", cp, local, ccy, part, f"Partial payment {inv.number}", [(inv.key, part)])
+        _twin(world, "real_partial_payment", "payment_allocation", [inv.key, pay.key],
+              "bank amount below the invoice, the whole payment allocated")
+        return [pay]
+    first = _part(rng, total, 30, 70, ccy)
+    text = f"{inv.number} part 1" if behaviour == "split" else f"Partial payment {inv.number}"
+    made = [_add_payment(rng, world, "in", cp, local, ccy, first, text, [(inv.key, first)])]
+    second_day = day + dt.timedelta(days=rng.randint(3, 15))
+    if second_day > world.window_end or budget < 2:
+        return made
+    second_local = local_time(rng, world, second_day)
+    if behaviour == "split":
+        made.append(_add_payment(rng, world, "in", cp, second_local, ccy, total - first, f"{inv.number} part 2",
+                                 [(inv.key, total - first)]))
+        _twin(world, "split_payment", "payment_allocation", [inv.key, *(p.key for p in made)],
+              "several payments, each allocated in full" + fx_note)
     else:
-        first = _major_round(total * rng.randint(40, 60) // 100)
-        made.append(_add_payment(rng, world, "in", cp, local, inv.currency, first, f"{inv.number} part 1",
-                                 [(inv.key, first)]))
-        second_day = day + dt.timedelta(days=rng.randint(3, 15))
-        if second_day <= world.window_end and budget >= 2:
-            made.append(_add_payment(rng, world, "in", cp, _local_time(rng, world, second_day), inv.currency,
-                                     total - first, f"{inv.number} part 2", [(inv.key, total - first)]))
-            world.twins.append({"kind": "split_payment", "mimics": "payment_allocation",
-                                "records": [inv.key, made[0].key, made[1].key],
-                                "feature": "several payments, each allocated in full, FX difference on each"})
+        made.append(_add_payment(rng, world, "in", cp, second_local, ccy, total, cites, [(inv.key, total - first)]))
+        _twin(world, "repeated_full_payment", "payment_allocation", [inv.key, *(p.key for p in made)],
+              "the second payment is the full total although part was paid: allocated up to the open amount, "
+              "the excess lies on 3510")
     return made
 
 
-def _pay_vendor(rng, world, inv, budget):
-    """We pay a vendor bill in full, on time or up to ten days late, if that falls in the window."""
-    cp = world.counterparties[inv.cp]
-    due = world.event_date(inv) + dt.timedelta(days=inv.terms)
+def _pay_vendor(rng, world, bills, budget):
+    """We pay vendor bills in full, on time or up to ten days late, if that falls in the window.
+    Two bills of one vendor may go out in one payment that cites both."""
+    cp = world.counterparties[bills[0].cp]
+    due = min(world.event_date(b) + dt.timedelta(days=b.terms) for b in bills)
     day = due + dt.timedelta(days=rng.choice((-rng.randint(0, 5), rng.randint(1, 10))))
-    day = max(day, world.event_date(inv) + dt.timedelta(days=1))
+    day = max([day] + [world.event_date(b) + dt.timedelta(days=1) for b in bills])
     if day > world.window_end or budget <= 0:
         return []
-    text = rng.choice((f"Payment for invoice {inv.vendor_ref}", f"{inv.vendor_ref}", f"Inv {inv.vendor_ref}"))
-    return [_add_payment(rng, world, "out", cp, _local_time(rng, world, day), inv.currency, inv.total_minor, text,
-                         [(inv.key, inv.total_minor)])]
+    refs = ", ".join(b.vendor_ref for b in bills)
+    word = "invoices" if len(bills) > 1 else "invoice"
+    text = rng.choice((f"Payment for {word} {refs}", refs, f"Inv {refs}"))
+    amount = sum(b.total_minor for b in bills)
+    pay = _add_payment(rng, world, "out", cp, local_time(rng, world, day), bills[0].currency, amount, text,
+                       [(b.key, b.total_minor) for b in bills])
+    if len(bills) > 1:
+        _twin(world, "combined_payment", "duplicate_invoice", [*(b.key for b in bills), pay.key],
+              "one payment cites two different bills of the vendor and settles both")
+    return [pay]
 
 
-def _new_ar(rng, world, numbers, cp, day):
-    """A customer invoice. Its number is a placeholder until _number_ar numbers all of them by time."""
-    inv = _add_invoice(rng, world, "AR", cp, _local_time(rng, world, day))
-    inv.number = f"@{inv.key}@"
-    return inv
+def _combined_receipt(rng, world, invoices, budget):
+    """A customer pays two of its invoices with one payment that cites both."""
+    cp = world.counterparties[invoices[0].cp]
+    last = max(world.event_date(i) for i in invoices)
+    day = last + dt.timedelta(days=rng.randint(1, min(i.terms for i in invoices)))
+    if day > world.window_end or budget <= 0:
+        return []
+    pay = _add_payment(rng, world, "in", cp, local_time(rng, world, day), invoices[0].currency,
+                       sum(i.total_minor for i in invoices), _ar_remittance(rng, [i.number for i in invoices], cp),
+                       [(i.key, i.total_minor) for i in invoices])
+    _twin(world, "combined_payment", "payment_allocation", [*(i.key for i in invoices), pay.key],
+          "one payment cites two invoices of the customer and settles both")
+    return [pay]
 
 
 def build_world(rng, config, reserved_documents=0, anchors=None):
@@ -702,20 +782,28 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
 
     `reserved_documents` are left for the injectors (a duplicate adds a bill). `anchors` asks for
     records an error needs, {"full_receipts": n, "vendor_bills": n}: they are ordinary clean records,
-    created first so that every requested error has a place.
+    created first so that every requested error has a place. Whether a config can hold its errors
+    depends on the config only, never on the seed (SPEC §4.4).
     """
     anchors = anchors or {}
+    low, high = config["documents"]
+    planned = 2 * anchors.get("full_receipts", 0) + anchors.get("vendor_bills", 0) + 2 * NEIGHBOUR_INVOICES
+    if high < planned + reserved_documents:
+        raise ValueError(f"config: documents {low}-{high} cannot hold the requested errors, "
+                         f"they need at least {planned + reserved_documents}")
     period = config["period"] or f"2026-{rng.randint(1, 12):02d}"
     year, month = int(period[:4]), int(period[5:])
     period_start, period_end = month_bounds(year, month)
     window_start = period_start - dt.timedelta(days=WINDOW_DAYS)
     window_end = period_end + dt.timedelta(days=WINDOW_DAYS)
-    offset = rng.choice(config["company_offsets"])
+    offset = canonical_offset(rng.choice(config["company_offsets"]))
     industry = rng.choice(sorted(INDUSTRIES))
     foreign_pct = rng.randint(*config["foreign_pct"])
-    rates = Rates(rng, window_start - dt.timedelta(days=RATE_LEAD_DAYS), window_end)
+    rates = Rates(rng, window_start - dt.timedelta(days=RATE_LEAD_DAYS), window_end + dt.timedelta(days=RATE_TAIL_DAYS))
     world = World(period, period_start, period_end, window_start, window_end, offset, industry, foreign_pct, rates,
                   {}, {}, {})
+    target = max(rng.randint(low, high), planned + reserved_documents) - reserved_documents
+    subscription_pct = rng.randint(*SUBSCRIPTION_PCT)
 
     def currency():
         return rng.choice(FOREIGN) if rng.randint(1, 100) <= foreign_pct else BASE
@@ -723,101 +811,133 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     for name in rng.sample(CUSTOMER_NAMES, rng.randint(6, 12)):
         cp = Counterparty(world.new_key("C"), name, "customer", rng.choice(COUNTERPARTY_OFFSETS), currency())
         world.counterparties[cp.key] = cp
-    vendors = rng.sample(VENDOR_NAMES, rng.randint(5, 9))
-    kinds = ["hosting", "rent"] + [rng.choice(("freight", "freight", "warehouse", "office")) for _ in vendors[2:]]
-    for (name, prefix), kind in zip(vendors, kinds):
+    # Monthly contracts: about subscription_pct of the vendor bills repeat one amount every month
+    # (domain spec A world table, «Подписки»). A contract bills one or two times in the window.
+    contracts = max(1, round(subscription_pct * AP_SHARE_OF_DOCUMENTS * target / 100 / BILLS_PER_CONTRACT))
+    monthly = min(contracts, rng.randint(2, 5))
+    names = rng.sample(VENDOR_NAMES, monthly + rng.randint(4, 7))
+    kinds = rng.sample(MONTHLY_KINDS, monthly) + [rng.choice(ONE_OFF_KINDS) for _ in names[monthly:]]
+    for (name, prefix), kind in zip(names, kinds):
         cp = Counterparty(world.new_key("C"), name, "vendor", rng.choice(COUNTERPARTY_OFFSETS), currency(), kind,
-                          prefix, rng.choice(REF_STYLES), rng.randint(10, 900))
+                          prefix, rng.choice(sorted(REF_STYLES)), rng.randint(10, 900))
         world.counterparties[cp.key] = cp
     customers = [c for c in world.counterparties.values() if c.role == "customer"]
     suppliers = [c for c in world.counterparties.values() if c.role == "vendor"]
+    monthly_vendors = [c for c in suppliers if VENDOR_KINDS[c.kind][2]]
     one_off = [c for c in suppliers if not VENDOR_KINDS[c.kind][2]]
     numbers = _Numbers(rng)
-
-    target = rng.randint(*config["documents"]) - reserved_documents
-    planned = 2 * anchors.get("full_receipts", 0) + anchors.get("vendor_bills", 0) + 2 * NEIGHBOUR_INVOICES
-    if target < planned:
-        raise ValueError(f"config: {target + reserved_documents} documents cannot hold the requested errors")
 
     def room():
         return target - world.documents()
 
-    # Monthly vendors bill on one day of every month, one fixed amount: subscription twins.
-    for cp in suppliers:
-        if not VENDOR_KINDS[cp.kind][2]:
-            continue
-        day_of_month, fixed = rng.randint(1, 28), None
+    for n in range(contracts):
+        cp = monthly_vendors[n % len(monthly_vendors)]
+        description = rng.choice(VENDOR_KINDS[cp.kind][1])
+        low_total, high_total = TOTAL_RANGE[cp.currency]
+        fixed = _price(rng, cp.currency, rng.randint(low_total, high_total) // 4)
+        day_of_month = rng.randint(1, 28)
+        bills = []
         y, m = window_start.year, window_start.month
         while dt.date(y, m, 1) <= window_end:
             day = dt.date(y, m, day_of_month)
             if window_start <= day <= window_end and room() > planned:
-                if fixed is None:
-                    fixed = _amount_lines(rng, world, cp.currency, VENDOR_KINDS[cp.kind][1])[0].unit_price_minor
                 first, last = month_bounds(y, m)
-                inv = _add_invoice(rng, world, "AP", cp, _local_time(rng, world, day, 0), numbers, fixed,
-                                   (first.isoformat(), last.isoformat()))
-                _pay_vendor(rng, world, inv, room() - planned)
+                inv = _add_invoice(rng, world, "AP", cp, local_time(rng, world, day, 0), numbers, fixed,
+                                   (first.isoformat(), last.isoformat()), description)
+                bills.append(inv.key)
+                _pay_vendor(rng, world, [inv], room() - planned)
             y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-        bills = [i.key for i in world.invoices.values() if i.cp == cp.key]
         if len(bills) > 1:
-            world.twins.append({"kind": "monthly_subscription", "mimics": "duplicate_invoice", "records": bills,
-                                "feature": "same vendor and amount, other vendor_ref and service month"})
+            _twin(world, "monthly_subscription", "duplicate_invoice", bills,
+                  "same vendor and amount, other vendor_ref and service month")
 
     def window_day(first=None, last=None):
         first, last = first or window_start, last or window_end
         return first + dt.timedelta(days=rng.randint(0, (last - first).days))
 
+    def new_ar(cp, day):
+        return _add_invoice(rng, world, "AR", cp, local_time(rng, world, day), numbers)
+
+    def new_ap(cp, day):
+        return _add_invoice(rng, world, "AP", cp, local_time(rng, world, day), numbers)
+
     # Records the requested errors need, then real rows of both neighbouring periods (INV-03).
     for _ in range(anchors.get("full_receipts", 0)):
         cp = rng.choice(customers)
-        inv = _new_ar(rng, world, numbers, cp, window_day(last=window_end - dt.timedelta(days=15)))
+        inv = new_ar(cp, window_day(last=window_end - dt.timedelta(days=15)))
         if not _pay_customer(rng, world, inv, 1, "on_time"):
             day = world.event_date(inv) + dt.timedelta(days=rng.randint(1, 10))
-            _add_payment(rng, world, "in", cp, _local_time(rng, world, day), inv.currency, inv.total_minor,
-                         _ar_remittance(rng, inv, cp, "full"), [(inv.key, inv.total_minor)])
+            _add_payment(rng, world, "in", cp, local_time(rng, world, day), inv.currency, inv.total_minor,
+                         _ar_remittance(rng, [inv.number], cp), [(inv.key, inv.total_minor)])
     for _ in range(anchors.get("vendor_bills", 0)):
-        _add_invoice(rng, world, "AP", rng.choice(one_off), _local_time(rng, world, window_day()), numbers)
+        new_ap(rng.choice(one_off), window_day())
     for first, last in ((window_start, period_start - dt.timedelta(days=1)), (period_end + dt.timedelta(days=1), window_end)):
         for _ in range(NEIGHBOUR_INVOICES):
             day = window_day(first, last)
             if rng.random() < 0.55:
-                _new_ar(rng, world, numbers, rng.choice(customers), day)
+                new_ar(rng.choice(customers), day)
             else:
-                _add_invoice(rng, world, "AP", rng.choice(one_off), _local_time(rng, world, day), numbers)
+                new_ap(rng.choice(one_off), day)
 
     # Ordinary trade until the document count is reached; a payment that would overshoot is left out.
     unknown = rng.randint(0, 2)
     while room() > unknown:
-        if rng.random() < 0.55:
-            inv = _new_ar(rng, world, numbers, rng.choice(customers), window_day())
+        roll = rng.random()
+        if roll < COMBINED_AR_SHARE and room() - unknown >= 3:
+            cp = rng.choice(customers)
+            day = window_day()
+            pair = [new_ar(cp, day), new_ar(cp, min(day + dt.timedelta(days=rng.randint(0, 7)), window_end))]
+            _combined_receipt(rng, world, pair, room() - unknown)
+        elif roll < COMBINED_AR_SHARE + COMBINED_AP_SHARE and room() - unknown >= 3:
+            cp = rng.choice(one_off)
+            day = window_day()
+            pair = [new_ap(cp, day), new_ap(cp, min(day + dt.timedelta(days=rng.randint(0, 10)), window_end))]
+            _pay_vendor(rng, world, pair, room() - unknown)
+        elif roll < 0.55:
+            inv = new_ar(rng.choice(customers), window_day())
             _pay_customer(rng, world, inv, room() - unknown)
         else:
-            inv = _add_invoice(rng, world, "AP", rng.choice(one_off), _local_time(rng, world, window_day()), numbers)
-            _pay_vendor(rng, world, inv, room() - unknown)
+            inv = new_ap(rng.choice(one_off), window_day())
+            _pay_vendor(rng, world, [inv], room() - unknown)
     taken = {i.total_minor for i in world.invoices.values()}
     while room() > 0:
-        amount = _major_round(rng.randint(50_000, 900_000) * 100)
+        amount = rng.randint(50_000, 900_000) * 100
         if amount in taken:
             continue
         taken.add(amount)
-        pay = _add_payment(rng, world, "in", None, _local_time(rng, world, window_day()), BASE, amount,
+        pay = _add_payment(rng, world, "in", None, local_time(rng, world, window_day()), BASE, amount,
                            rng.choice(UNKNOWN_TEXTS), [], raw_name=rng.choice(UNKNOWN_PAYERS))
-        world.twins.append({"kind": "unidentified_receipt", "mimics": "payment_allocation", "records": [pay.key],
-                            "feature": "no reference in the remittance, amount matches no open item"})
-    _number_ar(world, numbers.ar)
+        _twin(world, "unidentified_receipt", "payment_allocation", [pay.key],
+              "no reference in the remittance, amount matches no open item")
+    _number_documents(rng, world, numbers.ar)
     return world
 
 
-def _number_ar(world, first):
-    """Customer invoice numbers S-<year>-<n> follow the issue time, as an ERP numbers them, and replace
-    the placeholders in the invoices and in the remittance texts that cite them."""
-    ar = sorted((i for i in world.invoices.values() if i.direction == "AR"), key=lambda i: (i.issued_at, i.key))
+def _number_documents(rng, world, first_ar):
+    """Number documents by issue time, as an ERP and every vendor do, and replace the placeholders.
+
+    Customer invoices get S-<year>-<n>. A vendor numbers its bills in its own format; our clerk keys the
+    reference as printed, or in about CLERK_RETYPE_SHARE of bills with other separators. Remittance
+    texts cite the printed reference.
+    """
     final = {}
-    for n, inv in enumerate(ar, first):
+    ar = sorted((i for i in world.invoices.values() if i.direction == "AR"), key=lambda i: (i.issued_at, i.key))
+    for n, inv in enumerate(ar, first_ar):
         final[inv.number] = f"S-{world.event_date(inv).year}-{n:04d}"
         inv.number = final[inv.number]
+    for cp in world.counterparties.values():
+        if cp.role != "vendor":
+            continue
+        bills = sorted((i for i in world.invoices.values() if i.cp == cp.key), key=lambda i: (i.issued_at, i.key))
+        for n, inv in enumerate(bills, cp.next_number):
+            inv.ref_parts = (cp.prefix, inv.issued_at.year, n)
+            printed = _canonical_ref(cp, inv.ref_parts)
+            final[inv.vendor_ref] = printed
+            inv.vendor_ref = printed
+            if rng.random() < CLERK_RETYPE_SHARE:
+                inv.vendor_ref = rng.choice([v for v in ref_variants(inv.ref_parts, cp.style) if v != printed])
     for pay in world.payments.values():
-        for placeholder, number in final.items():
-            pay.remittance = pay.remittance.replace(placeholder, number)
+        for placeholder in re.findall(r"@I\d+@", pay.remittance):
+            pay.remittance = pay.remittance.replace(placeholder, final[placeholder])
         if "@" in pay.remittance:
-            raise WorldError(f"{pay.key}: remittance cites an unknown invoice")
+            raise WorldError(f"{pay.key}: remittance cites an unknown document")
