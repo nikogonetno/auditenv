@@ -77,7 +77,7 @@ def generate_in_fresh_process(spec, seed, config, out_dir, hash_seed):
     return result.returncode, result.stderr.strip().splitlines()[-1:] if result.stderr else []
 
 
-def check_seed(seed, config, generator, generator_spec, verifier, workdir):
+def check_seed(seed, config, generator, generator_spec, verifier, workdir, strict_volume=True):
     row = {"seed": seed, "config": config, "failures": []}
     out = Path(workdir) / f"seed_{seed}"
     started = time.monotonic()
@@ -107,7 +107,7 @@ def check_seed(seed, config, generator, generator_spec, verifier, workdir):
     if verifier is None:
         row["verify"] = "skipped: auditenv.verify not available"
     else:
-        problems = verifier(str(out))
+        problems = verifier(str(out), strict_volume=strict_volume)
         row["verify"] = len(problems)
         if problems:
             row["failures"].append(f"verify: {json.dumps(problems[:3], ensure_ascii=False)}")
@@ -131,6 +131,8 @@ def main(argv=None):
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--configs", default=str(ROOT / "configs" / "stress_v1.json"))
     parser.add_argument("--generator", default=DEFAULT_GENERATOR, help="module:function, default A's generator")
+    parser.add_argument("--no-strict-volume", action="store_true",
+                        help="skip the INV-03 volume check: only for small test books, never for generated episodes")
     args = parser.parse_args(argv)
 
     generator = load_generator(args.generator)
@@ -145,7 +147,8 @@ def main(argv=None):
     with tempfile.TemporaryDirectory(prefix="auditenv-stress-") as workdir:
         for k in range(args.n):
             seed = args.start + k
-            row = check_seed(seed, configs[k % len(configs)], generator, args.generator, verifier, workdir)
+            row = check_seed(seed, configs[k % len(configs)], generator, args.generator, verifier, workdir,
+                             strict_volume=not args.no_strict_volume)
             failed += bool(row["failures"])
             print(json.dumps(row, sort_keys=True, ensure_ascii=False), flush=True)
     summary = {"stress": "FAIL" if failed else "OK", "seeds": args.n, "failed": failed,
