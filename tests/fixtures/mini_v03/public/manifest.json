@@ -1,0 +1,23 @@
+{
+  "base_currency": "KZT",
+  "counts": {
+    "fx": 88,
+    "invoices": 14,
+    "ledger": 48,
+    "payments": 7
+  },
+  "documents": 21,
+  "episode_id": "KARPSR",
+  "period_end": "2026-09-30",
+  "period_start": "2026-09-01",
+  "rounding": {
+    "minor_units": {
+      "EUR": 2,
+      "KZT": 2,
+      "USD": 2
+    },
+    "mode": "ROUND_HALF_UP"
+  },
+  "schema_version": "case03-mini-1",
+  "timezone": "+05:00"
+}

@@ -132,9 +132,9 @@ def junk(n):
     return [{
         "type": TYPES[k % 4],
         "affected_ids": [ids[k % len(ids)]],
-        "amount_minor": 7 + k,
+        "claimed_amount_minor": 7 + k,
         "currency": "KZT",
-        "evidence": [ids[k % len(ids)]],
+        "evidence_ids": [ids[k % len(ids)]],
     } for k in range(n)]
 
 
@@ -247,7 +247,7 @@ def _set(f, key, value):
 
 def _bad_variants():
     good = finding_for(golden_issue("G21S27"))
-    ev = list(good["evidence"])
+    ev = list(good["evidence_ids"])
     noise = noise_ids(ev, 7)
     out = []
     for v in ("duplicate", "Duplicate_Invoice", "DUPLICATE_INVOICE", "duplicate_invoice ", "", None, 1,
@@ -257,14 +257,14 @@ def _bad_variants():
               ["invoice/1TNM24", None], ["invoice/1TNM24", ["invoice/F7SF66"]], MISSING):
         out.append((f"affected_ids={v!r}", _set(good, "affected_ids", v)))
     for v in (325000.0, 325000.5, "325000", True, False, -1, -325000, None, [325000], MISSING):
-        out.append((f"amount_minor={v!r}", _set(good, "amount_minor", v)))
+        out.append((f"claimed_amount_minor={v!r}", _set(good, "claimed_amount_minor", v)))
     for v in ("eur", "Eur", "EURO", "EU", "", "ЕUR", "EUR\n", " EUR", "EUR ", "E1R", "ÉUR",
               "ＥＵＲ", None, 978, ["EUR"], MISSING):
         out.append((f"currency={v!r}", _set(good, "currency", v)))
     for v in (ev + noise,                      # 11 distinct ids
               ev + ev + ev[:3],                # 11 with repeats
               "invoice/1TNM24", None, 3, [1], ev + [None], [ev], {k: 1 for k in ev}, MISSING):
-        out.append((f"evidence={v!r}", _set(good, "evidence", v)))
+        out.append((f"evidence_ids={v!r}", _set(good, "evidence_ids", v)))
     return good, out
 
 
@@ -303,8 +303,8 @@ class FindingFormatTest(GraderCase):
 
     def test_well_formed_but_wrong_finding_is_fp_but_not_invalid(self):
         good = finding_for(golden_issue("G21S27"))
-        for name, f in (("amount 0", _set(good, "amount_minor", 0)),
-                        ("empty evidence", _set(good, "evidence", [])),
+        for name, f in (("amount 0", _set(good, "claimed_amount_minor", 0)),
+                        ("empty evidence", _set(good, "evidence_ids", [])),
                         ("other currency", _set(good, "currency", "USD")),
                         ("other type", _set(good, "type", "fx_rate")),
                         ("unknown id", _set(good, "affected_ids", ["invoice/XXXXXX"]))):
@@ -315,12 +315,12 @@ class FindingFormatTest(GraderCase):
 
     def test_evidence_of_exactly_ten_is_allowed_including_repeats(self):
         good = finding_for(golden_issue("G21S27"))
-        ev = list(good["evidence"])
+        ev = list(good["evidence_ids"])
         for name, evidence in (("10 distinct", ev + noise_ids(ev, 6)),
                                ("10 with repeats", ev + ev + ev[:2])):
             with self.subTest(name):
                 self.assertEqual(len(evidence), 10)
-                res = self.score([_set(good, "evidence", evidence)], self.truth())
+                res = self.score([_set(good, "evidence_ids", evidence)], self.truth())
                 self.assertCounts(res, 1, 0, 0)
                 self.assertEqual(invalid(res), [])
 
@@ -328,14 +328,14 @@ class FindingFormatTest(GraderCase):
         # INV-20 keeps every truth amount above two tolerances, so 0 can never be a TP;
         # it is still a well-formed finding, an ordinary FP rather than an invalid one.
         issue = make_issue(amount=3, tolerance=1)
-        f = _set(finding_for(issue), "amount_minor", 0)
+        f = _set(finding_for(issue), "claimed_amount_minor", 0)
         res = self.score([f], truth_of(issue))
         self.assertCounts(res, 0, 1, 1)
         self.assertEqual(invalid(res), [])
 
     def test_bool_amount_is_rejected_even_when_value_would_match(self):
         issue = make_issue(amount=1, tolerance=0)
-        f = _set(finding_for(issue), "amount_minor", True)
+        f = _set(finding_for(issue), "claimed_amount_minor", True)
         res = self.score([f], truth_of(issue))
         self.assertCounts(res, 0, 1, 1)
         self.assertEqual(invalid(res), [0])
@@ -404,7 +404,7 @@ class MatchConditionsTest(GraderCase):
             good = finding_for(issue)
             for delta, tp in ((0, 1), (1, 1), (-1, 1), (2, 0), (-2, 0), (1000, 0)):
                 with self.subTest(tolerance="default" if tol is MISSING else tol, delta=delta):
-                    f = _set(good, "amount_minor", 325000 + delta)
+                    f = _set(good, "claimed_amount_minor", 325000 + delta)
                     self.assertCounts(self.score([f], truth_of(issue)), tp, 1 - tp, 1 - tp)
 
     def test_condition_3_tolerance_comes_from_issue(self):
@@ -414,14 +414,14 @@ class MatchConditionsTest(GraderCase):
             issue = make_issue(amount=325000, tolerance=tol)
             for delta, tp in deltas:
                 with self.subTest(tolerance=tol, delta=delta):
-                    f = _set(finding_for(issue), "amount_minor", 325000 + delta)
+                    f = _set(finding_for(issue), "claimed_amount_minor", 325000 + delta)
                     self.assertCounts(self.score([f], truth_of(issue)), tp, 1 - tp, 1 - tp)
 
     def test_condition_3_on_large_golden_amounts(self):
         issue = golden_issue("XG1494")  # 510120000 KZT, tolerance 1
         for delta, tp in ((1, 1), (-1, 1), (2, 0), (-2, 0)):
             with self.subTest(delta=delta):
-                f = _set(finding_for(issue), "amount_minor", issue["expected_amount_minor"] + delta)
+                f = _set(finding_for(issue), "claimed_amount_minor", issue["expected_amount_minor"] + delta)
                 self.assertCounts(self.score([f], truth_of(issue)), tp, 1 - tp, 1 - tp)
 
     def test_condition_4_currency_must_be_equal(self):
@@ -441,7 +441,7 @@ class MatchConditionsTest(GraderCase):
             for drop in needed:
                 with self.subTest(issue=issue["issue_id"], drop=drop):
                     ev = [x for x in needed if x != drop]
-                    f = _set(finding_for(issue), "evidence", ev)
+                    f = _set(finding_for(issue), "evidence_ids", ev)
                     self.assertCounts(self.score([f], truth_of(issue)), 0, 1, 1)
 
     def test_condition_5_superset_up_to_ten_is_enough(self):
@@ -450,7 +450,7 @@ class MatchConditionsTest(GraderCase):
             ev = list(needed) + noise_ids(needed, 10 - len(needed))
             random.Random(len(ev)).shuffle(ev)
             with self.subTest(issue=issue["issue_id"]):
-                f = _set(finding_for(issue), "evidence", ev)
+                f = _set(finding_for(issue), "evidence_ids", ev)
                 self.assertCounts(self.score([f], truth_of(issue)), 1, 0, 0)
 
     def test_condition_5_any_one_of_several_sets(self):
@@ -459,14 +459,14 @@ class MatchConditionsTest(GraderCase):
         good = finding_for(issue)
         for ev, tp in (([a, c], 1), ([b, d], 1), ([d, b], 1), ([a, b, c, d], 1),
                        ([a, d], 0), ([b, c], 0), ([a], 0), ([], 0)):
-            with self.subTest(evidence=ev):
-                self.assertCounts(self.score([_set(good, "evidence", ev)], truth_of(issue)), tp, 1 - tp, 1 - tp)
+            with self.subTest(evidence_ids=ev):
+                self.assertCounts(self.score([_set(good, "evidence_ids", ev)], truth_of(issue)), tp, 1 - tp, 1 - tp)
 
     def test_condition_5_eleven_ids_lose_even_with_the_set_inside(self):
         issue = golden_issue("FDZ2T6")
         needed = issue["evidence_sets"][0]
         ev = list(needed) + noise_ids(needed, 11 - len(needed))
-        res = self.score([_set(finding_for(issue), "evidence", ev)], truth_of(issue))
+        res = self.score([_set(finding_for(issue), "evidence_ids", ev)], truth_of(issue))
         self.assertCounts(res, 0, 1, 1)
         self.assertEqual(invalid(res), [0])
 
@@ -476,7 +476,7 @@ class MatchConditionsTest(GraderCase):
 class IdFormsTest(GraderCase):
     def _bare(self, f):
         return dict(f, affected_ids=[normalize_ref(x) for x in f["affected_ids"]],
-                    evidence=[normalize_ref(x) for x in f["evidence"]])
+                    evidence_ids=[normalize_ref(x) for x in f["evidence_ids"]])
 
     def test_bare_ids_match_prefixed_truth(self):
         t = golden()
@@ -507,13 +507,13 @@ class IdFormsTest(GraderCase):
     def test_fx_evidence_in_every_accepted_form(self):
         issue = golden_issue("XT92KR")  # evidence carries fx/2026-09-14/USD/KZT
         good = finding_for(issue)
-        rest = [x for x in good["evidence"] if not x.startswith("fx/")]
+        rest = [x for x in good["evidence_ids"] if not x.startswith("fx/")]
         for fx_ref, tp in (("fx/2026-09-14/USD/KZT", 1), ("2026-09-14/USD/KZT", 1),
                            ("ledger/2026-09-14/USD/KZT", 1), ("fx/fx/2026-09-14/USD/KZT", 0),
                            ("fx/2026-09-15/USD/KZT", 0), ("FX/2026-09-14/USD/KZT", 0),
                            ("fx/2026-09-14/usd/kzt", 0)):
             with self.subTest(fx_ref=fx_ref):
-                f = _set(good, "evidence", rest + [fx_ref])
+                f = _set(good, "evidence_ids", rest + [fx_ref])
                 self.assertCounts(self.score([f], truth_of(issue)), tp, 1 - tp, 1 - tp)
 
     def test_case_double_prefix_unknown_prefix_and_spaces_do_not_match(self):
@@ -530,9 +530,9 @@ class IdFormsTest(GraderCase):
         issue = golden_issue("G21S27")
         good = finding_for(issue)
         ev = ["doc/1TNM24", "F7SF66", "invoice/CKBBZ4", "payment/KBYZZ8"]
-        self.assertCounts(self.score([_set(good, "evidence", ev)], truth_of(issue)), 1, 0, 0)
+        self.assertCounts(self.score([_set(good, "evidence_ids", ev)], truth_of(issue)), 1, 0, 0)
         ev = ["INVOICE/1TNM24", "F7SF66", "ledger/CKBBZ4", "ledger/KBYZZ8"]
-        self.assertCounts(self.score([_set(good, "evidence", ev)], truth_of(issue)), 0, 1, 1)
+        self.assertCounts(self.score([_set(good, "evidence_ids", ev)], truth_of(issue)), 0, 1, 1)
 
     def test_je_ids_are_not_records(self):
         # SPEC 3.3/3.6: je/ never appears in truth, and a je/ finding never names the carrier row.
@@ -635,8 +635,8 @@ class AssignmentTest(GraderCase):
     def test_repeat_with_different_spelling_is_still_fp(self):
         issue = golden_issue("G21S27")
         f = finding_for(issue)
-        g = dict(f, affected_ids=["F7SF66", "1TNM24"], amount_minor=f["amount_minor"] + 1,
-                 evidence=list(reversed(f["evidence"])) + ["ledger/0N1PQJ"])
+        g = dict(f, affected_ids=["F7SF66", "1TNM24"], claimed_amount_minor=f["claimed_amount_minor"] + 1,
+                 evidence_ids=list(reversed(f["evidence_ids"])) + ["ledger/0N1PQJ"])
         res = self.score([g, f], truth_of(issue))
         self.assertCounts(res, 1, 1, 0)
         self.assertEqual(matched_pairs(res), {("G21S27", 0)})
@@ -659,7 +659,7 @@ class AssignmentTest(GraderCase):
         t = truth_of(golden_issue("XG1494"), golden_issue("ZHB4FR"))
         period = finding_for(golden_issue("XG1494"))
         fx = finding_for(golden_issue("ZHB4FR"))
-        f = dict(period, evidence=fx["evidence"])  # superset of the period set
+        f = dict(period, evidence_ids=fx["evidence_ids"])  # superset of the period set
         res = self.score([f], t)
         self.assertCounts(res, 1, 0, 1)
         self.assertEqual(matched_pairs(res), {("XG1494", 0)})
@@ -670,8 +670,8 @@ class AssignmentTest(GraderCase):
                     amount=325000, currency="EUR")
         ia = make_issue("AAAAAA", evidence_sets=((a,),), **base)
         ib = make_issue("BBBBBB", evidence_sets=((b,),), **base)
-        f_both = dict(finding_for(ia), evidence=[a, b, c])
-        f_only_a = dict(finding_for(ia), evidence=[a])
+        f_both = dict(finding_for(ia), evidence_ids=[a, b, c])
+        f_only_a = dict(finding_for(ia), evidence_ids=[a])
         return ia, ib, f_both, f_only_a
 
     def test_maximum_matching_beats_greedy(self):
@@ -679,7 +679,7 @@ class AssignmentTest(GraderCase):
         for order, expected in (((f_both, f_only_a), {("AAAAAA", 1), ("BBBBBB", 0)}),
                                 ((f_only_a, f_both), {("AAAAAA", 0), ("BBBBBB", 1)})):
             for issues in ((ia, ib), (ib, ia)):
-                with self.subTest(order=[len(f["evidence"]) for f in order],
+                with self.subTest(order=[len(f["evidence_ids"]) for f in order],
                                   issues=[i["issue_id"] for i in issues]):
                     res = self.score(list(order), truth_of(*issues))
                     self.assertCounts(res, 2, 0, 0)
@@ -759,8 +759,9 @@ class RewardTest(GraderCase):
         self.assertCounts(res, 0, 0, 0)
         self.assertReward(res, 1)
         self.assertAlmostEqual(float(field(res, "f1")), 1.0)
-        self.assertAlmostEqual(float(field(res, "precision")), 1.0)
-        self.assertAlmostEqual(float(field(res, "recall")), 1.0)
+        # Case §05: with a zero denominator P and R are 0; F1 is 1 by its own rule.
+        self.assertAlmostEqual(float(field(res, "precision")), 0.0)
+        self.assertAlmostEqual(float(field(res, "recall")), 0.0)
 
     def test_clean_company_false_positive(self):
         for n, steps in ((1, 0), (1, 30), (5, 0)):
@@ -770,14 +771,14 @@ class RewardTest(GraderCase):
                 self.assertReward(res, -1)
                 self.assertAlmostEqual(float(field(res, "f1")), 0.0)
                 self.assertAlmostEqual(float(field(res, "precision")), 0.0)
-                self.assertAlmostEqual(float(field(res, "recall")), 1.0)
+                self.assertAlmostEqual(float(field(res, "recall")), 0.0)
 
     def test_silence_on_dirty_company(self):
         res = self.score([], golden(), 0)
         self.assertCounts(res, 0, 0, 8)
         self.assertReward(res, -1)
         self.assertAlmostEqual(float(field(res, "f1")), 0.0)
-        self.assertAlmostEqual(float(field(res, "precision")), 1.0)
+        self.assertAlmostEqual(float(field(res, "precision")), 0.0)
         self.assertAlmostEqual(float(field(res, "recall")), 0.0)
 
     def test_step_cost_and_clipping(self):
@@ -812,7 +813,7 @@ class RewardTest(GraderCase):
                         fn = 8 - tp
                         self.assertCounts(res, tp, fp, fn)
                         self.assertReward(res, exact_reward(tp, fp, fn, steps))
-                        p = Fraction(1) if tp + fp == 0 else Fraction(tp, tp + fp)
+                        p = Fraction(0) if tp + fp == 0 else Fraction(tp, tp + fp)
                         r = Fraction(tp, tp + fn)
                         self.assertAlmostEqual(float(field(res, "precision")), float(p), places=12)
                         self.assertAlmostEqual(float(field(res, "recall")), float(r), places=12)
@@ -868,33 +869,33 @@ def _qa_rows():
     row("clean, one FP", junk(1), clean_truth(), 0, 0, 1, 0)
     row("oracle twice", o + o, t, 0, 8, 8, 0)
     row("half oracle", o[:4], t, 0, 4, 0, 4)
-    row("type and ids only, amount 0", [dict(f, amount_minor=0) for f in o], t, 0, 0, 8, 8)
-    row("type and ids only, no evidence", [dict(f, evidence=[]) for f in o], t, 0, 0, 8, 8)
+    row("type and ids only, amount 0", [dict(f, claimed_amount_minor=0) for f in o], t, 0, 0, 8, 8)
+    row("type and ids only, no evidence", [dict(f, evidence_ids=[]) for f in o], t, 0, 0, 8, 8)
     row("wrong currency", [dict(f, currency="RUB") for f in o], t, 0, 0, 8, 8)
-    row("amount off by one", [dict(f, amount_minor=f["amount_minor"] + 1) for f in o], t, 0, 8, 0, 0)
-    row("amount off by two", [dict(f, amount_minor=f["amount_minor"] - 2) for f in o], t, 0, 0, 8, 8)
+    row("amount off by one", [dict(f, claimed_amount_minor=f["claimed_amount_minor"] + 1) for f in o], t, 0, 8, 0, 0)
+    row("amount off by two", [dict(f, claimed_amount_minor=f["claimed_amount_minor"] - 2) for f in o], t, 0, 0, 8, 8)
     row("bare ids", [dict(f, affected_ids=[normalize_ref(x) for x in f["affected_ids"]],
-                          evidence=[normalize_ref(x) for x in f["evidence"]]) for f in o], t, 0, 8, 0, 0)
+                          evidence_ids=[normalize_ref(x) for x in f["evidence_ids"]]) for f in o], t, 0, 8, 0, 0)
     swap = {"period_cutoff": "fx_rate", "fx_rate": "period_cutoff"}
     c1 = [dict(f, type=swap[f["type"]]) if f["affected_ids"] == ["ledger/Z3H7BB"] else f for f in o]
     row("C1 period/fx types swapped", c1, t, 0, 6, 2, 2)
     row("id spray, one finding per type, all ids", [
-        {"type": ty, "affected_ids": ids, "amount_minor": 1, "currency": "KZT", "evidence": ids[:10]}
+        {"type": ty, "affected_ids": ids, "claimed_amount_minor": 1, "currency": "KZT", "evidence_ids": ids[:10]}
         for ty in TYPES], t, 0, 0, 4, 8)
     row("id spray, oracle with every id in affected_ids",
         [dict(f, affected_ids=ids) for f in o], t, 0, 0, 8, 8)
     row("intersection credit: one of two ids",
         [dict(f, affected_ids=f["affected_ids"][:1]) for f in o if len(f["affected_ids"]) == 2], t, 0, 0, 4, 8)
-    row("evidence padded to 10", [dict(f, evidence=list(f["evidence"]) + noise_ids(f["evidence"], 10 - len(f["evidence"])))
+    row("evidence padded to 10", [dict(f, evidence_ids=list(f["evidence_ids"]) + noise_ids(f["evidence_ids"], 10 - len(f["evidence_ids"])))
                                   for f in o], t, 0, 8, 0, 0)
-    row("evidence padded to 11", [dict(f, evidence=list(f["evidence"]) + noise_ids(f["evidence"], 11 - len(f["evidence"])))
+    row("evidence padded to 11", [dict(f, evidence_ids=list(f["evidence_ids"]) + noise_ids(f["evidence_ids"], 11 - len(f["evidence_ids"])))
                                   for f in o], t, 0, 0, 8, 8)
-    row("amount as string", [dict(f, amount_minor=str(f["amount_minor"])) for f in o], t, 0, 0, 8, 8)
-    row("amount as float", [dict(f, amount_minor=float(f["amount_minor"])) for f in o], t, 0, 0, 8, 8)
+    row("amount as string", [dict(f, claimed_amount_minor=str(f["claimed_amount_minor"])) for f in o], t, 0, 0, 8, 8)
+    row("amount as float", [dict(f, claimed_amount_minor=float(f["claimed_amount_minor"])) for f in o], t, 0, 0, 8, 8)
     row("lowercase currency", [dict(f, currency=f["currency"].lower()) for f in o], t, 0, 0, 8, 8)
     row("oracle plus 100 junk", o + junk(100), t, 0, 8, 100, 0)
     row("per-record spray of all types", [
-        {"type": ty, "affected_ids": [r], "amount_minor": 1, "currency": "KZT", "evidence": [r]}
+        {"type": ty, "affected_ids": [r], "claimed_amount_minor": 1, "currency": "KZT", "evidence_ids": [r]}
         for r in ids for ty in TYPES], t, 0, 0, 300, 8)
     return rows
 
@@ -929,13 +930,13 @@ def ref_valid(f):
     a = f.get("affected_ids")
     if not isinstance(a, list) or not a or not all(isinstance(x, str) for x in a):
         return False
-    m = f.get("amount_minor", MISSING)
+    m = f.get("claimed_amount_minor", MISSING)
     if type(m) is not int or m < 0:
         return False
     c = f.get("currency")
     if not isinstance(c, str) or len(c) != 3 or not all("A" <= ch <= "Z" for ch in c):
         return False
-    e = f.get("evidence")
+    e = f.get("evidence_ids")
     if not isinstance(e, list) or len(e) > 10 or not all(isinstance(x, str) for x in e):
         return False
     return True
@@ -946,9 +947,9 @@ def ref_admissible(f, issue):
         return False
     if {normalize_ref(x) for x in f["affected_ids"]} != {normalize_ref(x) for x in issue["affected_ids"]}:
         return False
-    if abs(f["amount_minor"] - issue["expected_amount_minor"]) > issue.get("tolerance_minor", 1):
+    if abs(f["claimed_amount_minor"] - issue["expected_amount_minor"]) > issue.get("tolerance_minor", 1):
         return False
-    ev = {normalize_ref(x) for x in f["evidence"]}
+    ev = {normalize_ref(x) for x in f["evidence_ids"]}
     return any({normalize_ref(x) for x in s} <= ev for s in issue["evidence_sets"])
 
 
@@ -983,24 +984,24 @@ def _mutate(rng, truth):
         g = copy.deepcopy(f)
         op = rng.randrange(16)
         if op == 0:
-            g["amount_minor"] += rng.choice((-3, -2, -1, 1, 2, 3))
+            g["claimed_amount_minor"] += rng.choice((-3, -2, -1, 1, 2, 3))
         elif op == 1:
             g["currency"] = rng.choice(("KZT", "USD", "EUR", "usd", "US", "USDT"))
         elif op == 2:
             g["type"] = rng.choice(TYPES)
-        elif op == 3 and g["evidence"]:
-            g["evidence"].pop(rng.randrange(len(g["evidence"])))
+        elif op == 3 and g["evidence_ids"]:
+            g["evidence_ids"].pop(rng.randrange(len(g["evidence_ids"])))
         elif op == 4:
-            g["evidence"] += rng.sample(ids, rng.randint(0, 9))
+            g["evidence_ids"] += rng.sample(ids, rng.randint(0, 9))
         elif op == 5:
             g["affected_ids"] = [normalize_ref(x) for x in g["affected_ids"]]
-            g["evidence"] = [normalize_ref(x) for x in g["evidence"]]
+            g["evidence_ids"] = [normalize_ref(x) for x in g["evidence_ids"]]
         elif op == 6:
             g["affected_ids"] = [rng.choice(KNOWN_PREFIXES) + "/" + normalize_ref(x) for x in g["affected_ids"]]
         elif op == 7:
             g["affected_ids"].append(rng.choice(ids))
         elif op == 8:
-            g["amount_minor"] = rng.choice((float(g["amount_minor"]), str(g["amount_minor"]), True, -1))
+            g["claimed_amount_minor"] = rng.choice((float(g["claimed_amount_minor"]), str(g["claimed_amount_minor"]), True, -1))
         elif op == 9:
             out.append(copy.deepcopy(g))
         elif op == 10 and len(g["affected_ids"]) > 1:
@@ -1008,7 +1009,7 @@ def _mutate(rng, truth):
         elif op == 11:
             g["affected_ids"] = [x.upper() if rng.random() < 0.5 else x for x in g["affected_ids"]]
         elif op == 12:
-            g["evidence"] = g["evidence"] * 3
+            g["evidence_ids"] = g["evidence_ids"] * 3
         elif op == 13:
             g["affected_ids"] = g["affected_ids"] * 2
         out.append(g)

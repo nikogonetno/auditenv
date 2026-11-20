@@ -6,3 +6,5 @@
 runs/
 out/
 *.zip
+Claude outputs/
+QA_REVIEW.txt

@@ -72,8 +72,8 @@ carriers = [r for r in led if not r["settles_invoice_id"] and (
     (r["source_type"] == "invoice" and r["account"] in ("1210", "3310")) or
     (r["source_type"] == "payment" and r["account"] == "1030"))]
 spray = [{"type": "period_cutoff", "affected_ids": [f"ledger/{r['row_id']}"],
-          "amount_minor": int(r["debit_minor"]) or int(r["credit_minor"]), "currency": "KZT",
-          "evidence": [f"{r['source_type']}/{r['source_id']}", f"ledger/{r['row_id']}"]} for r in carriers]
+          "claimed_amount_minor": int(r["debit_minor"]) or int(r["credit_minor"]), "currency": "KZT",
+          "evidence_ids": [f"{r['source_type']}/{r['source_id']}", f"ledger/{r['row_id']}"]} for r in carriers]
 pages = -(-len(led) // 50)
 for k in (0, pages):
     r = score(spray, T, k)
@@ -88,12 +88,12 @@ for c in (0.0, 0.12, 0.25):
 line("R-08", f"silence wins on average once clean share > {(rs + 1) / (rs + 3):.3f}")
 
 # ---------------------------------------------------------------- JSON level hazards for the env (not the grader)
-for name, text in [("NaN amount", '{"amount_minor": NaN}'), ("Infinity amount", '{"amount_minor": Infinity}')]:
-    v = json.loads(text)["amount_minor"]
-    f = dict(O[0], amount_minor=v)
+for name, text in [("NaN amount", '{"claimed_amount_minor": NaN}'), ("Infinity amount", '{"claimed_amount_minor": Infinity}')]:
+    v = json.loads(text)["claimed_amount_minor"]
+    f = dict(O[0], claimed_amount_minor=v)
     line("JSON", f"{name}: json.loads accepts it as {type(v).__name__}, grader counts it invalid {score([f], T, 0)['tp'] == 0}")
 try:
-    json.loads('{"amount_minor": 1' + "0" * 5000 + "}")
+    json.loads('{"claimed_amount_minor": 1' + "0" * 5000 + "}")
     line("JSON", "int with 5001 digits parsed")
 except ValueError as e:
     line("JSON", f"int with 5001 digits makes json.loads raise ValueError on this Python ({str(e)[:60]})")
@@ -105,12 +105,12 @@ except RecursionError:
 
 # ---------------------------------------------------------------- cost
 for n, label in [(100_000, "copies of the oracle"), (100_000, "junk findings")]:
-    F = (O * (n // len(O))) if "oracle" in label else [{"type": "fx_rate", "affected_ids": [str(i)], "amount_minor": i,
-                                                       "currency": "KZT", "evidence": [str(i)]} for i in range(n)]
+    F = (O * (n // len(O))) if "oracle" in label else [{"type": "fx_rate", "affected_ids": [str(i)], "claimed_amount_minor": i,
+                                                       "currency": "KZT", "evidence_ids": [str(i)]} for i in range(n)]
     t0 = time.perf_counter()
     r = score(F, T, 0)
     line("COST", f"{len(F)} {label}: {time.perf_counter() - t0:.2f} s, TP {r['tp']} FP {r['fp']}")
-big = [dict(O[0], evidence=["x"] * 1_000_000)]
+big = [dict(O[0], evidence_ids=["x"] * 1_000_000)]
 t0 = time.perf_counter()
 score(big, T, 0)
 line("COST", f"one finding with 1 000 000 evidence ids: {time.perf_counter() - t0:.2f} s")

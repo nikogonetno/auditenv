@@ -18,8 +18,8 @@ def counts(result):
 
 
 def pad_evidence(finding, size):
-    pool = [r for r in public_record_ids() if r not in finding["evidence"]]
-    return {**finding, "evidence": finding["evidence"] + pool[: size - len(finding["evidence"])]}
+    pool = [r for r in public_record_ids() if r not in finding["evidence_ids"]]
+    return {**finding, "evidence_ids": finding["evidence_ids"] + pool[: size - len(finding["evidence_ids"])]}
 
 
 def swap_c1_types(findings):
@@ -37,11 +37,11 @@ def qa_cases():
     oracle = oracle_findings(truth)
     records = public_record_ids()
     flag_all = [
-        {"type": t, "affected_ids": [r], "amount_minor": 0, "currency": "KZT", "evidence": [r]}
+        {"type": t, "affected_ids": [r], "claimed_amount_minor": 0, "currency": "KZT", "evidence_ids": [r]}
         for r in records for t in ISSUE_TYPES
     ]
     spray = [
-        {"type": t, "affected_ids": records, "amount_minor": 0, "currency": "KZT", "evidence": records[:10]}
+        {"type": t, "affected_ids": records, "claimed_amount_minor": 0, "currency": "KZT", "evidence_ids": records[:10]}
         for t in ISSUE_TYPES
     ]
     false_claim = {**oracle[0]}
@@ -56,9 +56,9 @@ def qa_cases():
         ("flag everything, clean company", flag_all, clean, 0, (0, 300, 0), -1.0),
         ("spray all 75 ids in 4 findings", spray, truth, 0, (0, 4, 8), -1.0),
         ("oracle, every finding twice", oracle + oracle, truth, 0, (8, 8, 0), float(third)),
-        ("oracle, amount off by 2", [{**f, "amount_minor": f["amount_minor"] + 2} for f in oracle], truth, 0, (0, 8, 8), -1.0),
+        ("oracle, amount off by 2", [{**f, "claimed_amount_minor": f["claimed_amount_minor"] + 2} for f in oracle], truth, 0, (0, 8, 8), -1.0),
         ("oracle, wrong currency", [{**f, "currency": "EUR" if f["currency"] != "EUR" else "USD"} for f in oracle], truth, 0, (0, 8, 8), -1.0),
-        ("oracle without evidence", [{**f, "evidence": []} for f in oracle], truth, 0, (0, 8, 8), -1.0),
+        ("oracle without evidence", [{**f, "evidence_ids": []} for f in oracle], truth, 0, (0, 8, 8), -1.0),
         ("oracle, evidence padded to 10", [pad_evidence(f, 10) for f in oracle], truth, 0, (8, 0, 0), 1.0),
         ("oracle, 11 evidence ids", [pad_evidence(f, 11) for f in oracle], truth, 0, (0, 8, 8), -1.0),
         ("non-existent ids", [{**f, "affected_ids": [f"invoice/00000{k}"]} for k, f in enumerate(oracle)], truth, 0, (0, 8, 8), -1.0),
@@ -93,7 +93,7 @@ class QaRewardTable(unittest.TestCase):
         for truth in (truth_v2(), clean_truth()):
             records = public_record_ids()
             flag_all = [
-                {"type": t, "affected_ids": [r], "amount_minor": 0, "currency": "KZT", "evidence": [r]}
+                {"type": t, "affected_ids": [r], "claimed_amount_minor": 0, "currency": "KZT", "evidence_ids": [r]}
                 for r in records for t in ISSUE_TYPES
             ]
             self.assertLessEqual(score(flag_all, truth, 0)["reward"], score([], truth, 0)["reward"])
@@ -114,8 +114,8 @@ class IdPrefixes(unittest.TestCase):
         truth = truth_v2()
         oracle = oracle_findings(truth)
         bare = [{**f, "affected_ids": [normalize_id(x) for x in f["affected_ids"]],
-                 "evidence": [normalize_id(x) for x in f["evidence"]]} for f in oracle]
-        mixed = [{**f, "evidence": [normalize_id(x) if k % 2 else x for k, x in enumerate(f["evidence"])]} for f in oracle]
+                 "evidence_ids": [normalize_id(x) for x in f["evidence_ids"]]} for f in oracle]
+        mixed = [{**f, "evidence_ids": [normalize_id(x) if k % 2 else x for k, x in enumerate(f["evidence_ids"])]} for f in oracle]
         for findings in (oracle, bare, mixed):
             self.assertEqual(counts(score(findings, truth, 0)), (8, 0, 0))
 
@@ -156,7 +156,7 @@ class OrderAndDeterminism(unittest.TestCase):
             "from tests.golden import truth_v2, oracle_findings, public_record_ids\n"
             "t = truth_v2()\n"
             "f = oracle_findings(t) + [{'type': 'fx_rate', 'affected_ids': public_record_ids(),"
-            " 'amount_minor': 1, 'currency': 'KZT', 'evidence': []}]\n"
+            " 'claimed_amount_minor': 1, 'currency': 'KZT', 'evidence_ids': []}]\n"
             "print(json.dumps(score(f, t, 13), sort_keys=True))\n"
         )
         outputs ={seed: run_python(["-c", code], seed, cwd=root) for seed in ("0", "1", "12345")}
@@ -176,15 +176,15 @@ class MaximumMatching(unittest.TestCase):
         ]}
 
     def test_beats_greedy_assignment(self):
-        finding = {"type": "duplicate_invoice", "affected_ids": ["AAAAAA", "BBBBBB"], "amount_minor": 500, "currency": "KZT"}
-        both = {**finding, "evidence": ["EV0001", "EV0002"]}
-        only_first = {**finding, "evidence": ["EV0001"]}
+        finding = {"type": "duplicate_invoice", "affected_ids": ["AAAAAA", "BBBBBB"], "claimed_amount_minor": 500, "currency": "KZT"}
+        both = {**finding, "evidence_ids": ["EV0001", "EV0002"]}
+        only_first = {**finding, "evidence_ids": ["EV0001"]}
         result = score([both, only_first], self.two_twin_issues(), 0)
         self.assertEqual(counts(result), (2, 0, 0))
 
     def test_ties_follow_issue_id_then_finding_number(self):
-        finding = {"type": "duplicate_invoice", "affected_ids": ["AAAAAA", "BBBBBB"], "amount_minor": 500,
-                   "currency": "KZT", "evidence": ["EV0001", "EV0002"]}
+        finding = {"type": "duplicate_invoice", "affected_ids": ["AAAAAA", "BBBBBB"], "claimed_amount_minor": 500,
+                   "currency": "KZT", "evidence_ids": ["EV0001", "EV0002"]}
         truth = self.two_twin_issues()
         for issues in (truth["issues"], truth["issues"][::-1]):
             result = score([finding, dict(finding)], {**truth, "issues": issues}, 0)
@@ -220,8 +220,8 @@ class MaximumMatching(unittest.TestCase):
                 self.assertEqual(match(findings, issues), [(i, j) for i, j in enumerate(best) if j is not None])
 
     def test_one_finding_closes_one_issue(self):
-        finding = {"type": "duplicate_invoice", "affected_ids": ["AAAAAA", "BBBBBB"], "amount_minor": 500,
-                   "currency": "KZT", "evidence": ["EV0001", "EV0002"]}
+        finding = {"type": "duplicate_invoice", "affected_ids": ["AAAAAA", "BBBBBB"], "claimed_amount_minor": 500,
+                   "currency": "KZT", "evidence_ids": ["EV0001", "EV0002"]}
         self.assertEqual(counts(score([finding], self.two_twin_issues(), 0)), (1, 0, 1))
 
     def test_alternative_evidence_sets(self):
@@ -229,16 +229,16 @@ class MaximumMatching(unittest.TestCase):
             "issue_id": "I1", "type": "fx_rate", "affected_ids": ["ledger/QQ5GHK"], "expected_amount_minor": 1270000,
             "currency": "KZT", "evidence_sets": [["invoice/FRVMVD", "ledger/QQ5GHK", "fx/F1"], ["ledger/QQ5GHK", "fx/F2"]],
         }]}
-        finding = {"type": "fx_rate", "affected_ids": ["QQ5GHK"], "amount_minor": 1270000, "currency": "KZT",
-                   "evidence": ["QQ5GHK", "F2", "invoice/ZZZZZZ"]}
+        finding = {"type": "fx_rate", "affected_ids": ["QQ5GHK"], "claimed_amount_minor": 1270000, "currency": "KZT",
+                   "evidence_ids": ["QQ5GHK", "F2", "invoice/ZZZZZZ"]}
         self.assertEqual(counts(score([finding], truth, 0)), (1, 0, 0))
-        self.assertEqual(counts(score([{**finding, "evidence": ["QQ5GHK"]}], truth, 0)), (0, 1, 1))
+        self.assertEqual(counts(score([{**finding, "evidence_ids": ["QQ5GHK"]}], truth, 0)), (0, 1, 1))
 
     def test_amount_tolerance_is_inclusive(self):
         truth = truth_v2()
         oracle = oracle_findings(truth)
         for delta, expected in ((-1, 8), (1, 8), (2, 0), (-2, 0)):
-            shifted = [{**f, "amount_minor": f["amount_minor"] + delta} for f in oracle]
+            shifted = [{**f, "claimed_amount_minor": f["claimed_amount_minor"] + delta} for f in oracle]
             with self.subTest(delta=delta):
                 self.assertEqual(score(shifted, truth, 0)["tp"], expected)
 
@@ -254,19 +254,19 @@ class FindingFormat(unittest.TestCase):
     def test_malformed_findings_count_as_false_positives(self):
         g = self.good
         bad = {
-            "amount as string": {**g, "amount_minor": str(g["amount_minor"])},
-            "amount as float": {**g, "amount_minor": float(g["amount_minor"])},
-            "amount as bool": {**g, "amount_minor": True},
-            "negative amount": {**g, "amount_minor": -g["amount_minor"]},
+            "amount as string": {**g, "claimed_amount_minor": str(g["claimed_amount_minor"])},
+            "amount as float": {**g, "claimed_amount_minor": float(g["claimed_amount_minor"])},
+            "amount as bool": {**g, "claimed_amount_minor": True},
+            "negative amount": {**g, "claimed_amount_minor": -g["claimed_amount_minor"]},
             "lowercase currency": {**g, "currency": g["currency"].lower()},
             "four-letter currency": {**g, "currency": g["currency"] + "X"},
             "unknown type": {**g, "type": "fraud"},
             "affected ids as string": {**g, "affected_ids": g["affected_ids"][0]},
             "empty affected ids": {**g, "affected_ids": []},
-            "evidence as string": {**g, "evidence": " ".join(g["evidence"])},
+            "evidence as string": {**g, "evidence_ids": " ".join(g["evidence_ids"])},
             "non-string id": {**g, "affected_ids": [1]},
             "missing currency": {k: v for k, v in g.items() if k != "currency"},
-            "duplicated evidence over 10": {**g, "evidence": (g["evidence"] * 11)[:11]},
+            "duplicated evidence over 10": {**g, "evidence_ids": (g["evidence_ids"] * 11)[:11]},
             "not an object": [g],
             "null": None,
         }
@@ -314,7 +314,7 @@ class FindingFormat(unittest.TestCase):
         Explosive.armed = True
         hostile = {
             "str subclass currency": {**g, "currency": AnyCurrency("XXX")},
-            "list subclass evidence": {**g, "evidence": ShortList(g["evidence"] * 6)},
+            "list subclass evidence": {**g, "evidence_ids": ShortList(g["evidence_ids"] * 6)},
             "list subclass affected": {**g, "affected_ids": ShortList(g["affected_ids"])},
             "dict subclass": LyingDict(g),
             "key that raises on compare": colliding,

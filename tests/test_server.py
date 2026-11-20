@@ -9,7 +9,7 @@ from auditenv.server import MAX_DEPTH, MAX_INT_DIGITS, BadMessage, decode_messag
 class DecodeMessage(unittest.TestCase):
     def test_plain_messages_parse(self):
         msg = {"action": "submit", "findings": [{"type": "fx_rate", "affected_ids": ["ledger/QQ5GHK"],
-                                                 "amount_minor": 1270000, "currency": "KZT", "evidence": []}]}
+                                                 "claimed_amount_minor": 1270000, "currency": "KZT", "evidence_ids": []}]}
         text = json.dumps(msg)
         self.assertEqual(decode_message(text), msg)
         self.assertEqual(decode_message(text.encode("utf-8")), msg)
@@ -17,11 +17,11 @@ class DecodeMessage(unittest.TestCase):
 
     def test_r09_cases_become_bad_message(self):
         bad = {
-            "NaN": '{"amount_minor": NaN}',
-            "Infinity": '{"amount_minor": Infinity}',
-            "-Infinity": '{"amount_minor": -Infinity}',
-            "float overflow to inf": '{"amount_minor": 1e999}',
-            "int with 5001 digits": '{"amount_minor": 1' + "0" * 5000 + "}",
+            "NaN": '{"claimed_amount_minor": NaN}',
+            "Infinity": '{"claimed_amount_minor": Infinity}',
+            "-Infinity": '{"claimed_amount_minor": -Infinity}',
+            "float overflow to inf": '{"claimed_amount_minor": 1e999}',
+            "int with 5001 digits": '{"claimed_amount_minor": 1' + "0" * 5000 + "}",
             "int one digit over the cap": '{"n": ' + "9" * (MAX_INT_DIGITS + 1) + "}",
             "negative int over the cap": '{"n": -' + "9" * (MAX_INT_DIGITS + 1) + "}",
             "200000 nested lists": "[" * 200000 + "]" * 200000,
