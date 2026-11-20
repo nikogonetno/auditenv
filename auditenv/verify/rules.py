@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from .book import (PAYMENT_SIDE, BookError, event_time, group_key, is_clearing, minor, normalize_ref,
                    parse_rate, parse_time, row_base)
+from .ids import normalize_id
 
 
 @dataclass(frozen=True)
@@ -194,7 +195,7 @@ def _allocation(book, payment, mine, cleared, groups, invoices, problems):
     side = PAYMENT_SIDE.get(payment.get("direction"))
     named = set()
     for ref in refs:
-        invoice = invoices.get(ref) if type(ref) is str else None
+        invoice = invoices.get(normalize_id(ref)) if type(ref) is str else None
         if invoice is None:
             _problem(problems, "INV-08", f"payment {pid} refers to unknown invoice {ref!r}")
             continue

@@ -83,18 +83,6 @@ def check_inv20(issues, problems):
             add(problems, "INV-20", f"issue {issue['issue_id']}: amount {amount} is not above 2 x {tol}")
 
 
-def check_d4(issues, book, problems):
-    """QA D-4: no two issues share type and affected set."""
-    first = {}
-    for issue in issues:
-        key = (issue["type"], frozenset(book.canon(x) for x in issue["affected_ids"]))
-        if key in first:
-            add(problems, "D-4", f"issues {first[key]} and {issue['issue_id']} are both {key[0]} "
-                                 f"on {sorted(key[1])}")
-        else:
-            first[key] = issue["issue_id"]
-
-
 # --- INV-17 and INV-18 -------------------------------------------------------------------------
 
 def check_inv17(issues, book, problems):
@@ -135,10 +123,17 @@ def check_inv17(issues, book, problems):
 
 def check_inv18(issues, violations, book, problems):
     """INV-18: rule violations of the public book and truth issues match one to one by type and ids.
-    Truth issues are taken in issue_id order, so a repeated issue (D-4) is the later one left over."""
+    Truth issues are taken in issue_id order. Two issues with one type and affected set (QA D-4, SPEC §6)
+    break the one to one match: the later one is reported as a duplicate truth issue."""
     left = {v.key: v for v in violations}
+    first = {}
     for issue in issues:
         key = (issue["type"], frozenset(book.canon(x) for x in issue["affected_ids"]))
+        if key in first:
+            add(problems, "INV-18", f"duplicate truth issue: {first[key]} and {issue['issue_id']} are both "
+                                    f"{key[0]} on {sorted(key[1])}")
+            continue
+        first[key] = issue["issue_id"]
         found = left.pop(key, None)
         if found is None:
             add(problems, "INV-18", f"truth issue {issue['issue_id']} {issue['type']} {sorted(key[1])} "
