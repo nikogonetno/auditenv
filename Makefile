@@ -3,7 +3,7 @@ N ?= 300
 IMAGE ?= auditenv:dev
 GOLDEN := tests/fixtures/golden_v0.1/episode
 
-.PHONY: verify test qa demo stress episodes docker-build docker-verify clean
+.PHONY: verify test qa demo stress episodes metrics paired docker-build docker-verify clean
 
 # The one command. Same script is the default CMD of the Docker image.
 verify:
@@ -35,6 +35,14 @@ stress:
 episodes:
 	$(PY) scripts/build_episodes.py train
 	$(PY) scripts/build_episodes.py dev
+
+# Diagnostics of the four policies on train and dev (case §10): docs/METRICS.md, raw rows, train trajectories.
+metrics:
+	$(PY) scripts/metrics.py episodes/train episodes/dev --out docs/METRICS.md --json runs/metrics.json
+
+# 20 paired checks (case §10): repeat seed and actions; permutation and new ids once A's transform lands.
+paired:
+	$(PY) scripts/paired.py episodes/dev --n 20
 
 docker-build:
 	docker build -t $(IMAGE) .
