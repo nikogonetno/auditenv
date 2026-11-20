@@ -78,7 +78,7 @@ def generate_in_fresh_process(spec, seed, config, out_dir, hash_seed):
 
 
 def check_seed(seed, config, generator, generator_spec, verifier, workdir, strict_volume=True):
-    row = {"seed": seed, "config": config, "failures": []}
+    row = {"seed": seed, "config": config, "strict_volume": strict_volume, "failures": []}
     out = Path(workdir) / f"seed_{seed}"
     started = time.monotonic()
     try:
@@ -152,7 +152,7 @@ def main(argv=None):
             failed += bool(row["failures"])
             print(json.dumps(row, sort_keys=True, ensure_ascii=False), flush=True)
     summary = {"stress": "FAIL" if failed else "OK", "seeds": args.n, "failed": failed,
-               "verifier": "on" if verifier else "skipped"}
+               "verifier": "on" if verifier else "skipped", "strict_volume": not args.no_strict_volume}
     print(json.dumps(summary, sort_keys=True))
     return 1 if failed else 0
 

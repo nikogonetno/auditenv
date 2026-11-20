@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT))
 from auditenv.config import ISSUE_TYPES  # noqa: E402
 from auditenv.env import MODES, AuditEnv  # noqa: E402
 from auditenv.grader import f1_score  # noqa: E402
+from auditenv.private_args import hide_private_args  # noqa: E402
 from auditenv.run import POLICIES, run_policy  # noqa: E402
 from auditenv.runner import encode_line  # noqa: E402
 
@@ -48,7 +49,8 @@ def parse_policies(text):
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(prog="scripts/metrics.py", description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(prog="scripts/metrics.py", description=__doc__.split("\n\n")[0],
+                                     allow_abbrev=False)  # see auditenv.private_args
     parser.add_argument("episode_dirs", nargs="+", metavar="EPISODE_DIR", help="an episode or a split directory")
     parser.add_argument("--policies", type=parse_policies, default=list(POLICIES))
     parser.add_argument("--mode", default="eval", choices=MODES)
@@ -258,7 +260,8 @@ def open_output(path, mode):
 
 
 def main(argv=None):
-    args = parse_args(argv)
+    # The seed and config never stay in this process's command line (QA N-1).
+    args = parse_args(hide_private_args() if argv is None else argv)
     try:
         episodes = expand(args.episode_dirs)
     except ValueError as exc:

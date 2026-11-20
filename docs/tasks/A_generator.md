@@ -71,6 +71,7 @@ def generate_episode(seed: int, config: dict, out_dir: str) -> None:
 
 ## Жёсткие правила
 
+- Дни недели в `policy.fx.weekend_days` по ISO: понедельник 1 … воскресенье 7. Брать `date.isoweekday()`, а не `weekday()`, где понедельник 0, иначе курс субботы уедет и стресс упадёт на INV-18 (замечание QA).
 - Только стандартная библиотека. Случайность только из `random.Random(seed)`. Деньги целыми минорными единицами, курсы через `Decimal` с `ROUND_HALF_UP`. Вывод через `sorted` и `sort_keys`. Без `float` в деньгах, без `datetime.now()`, `hash()` и tzdata.
 - ID из 6 символов Crockford Base32, назначаются после внесения ошибок, уникальны между таблицами.
 - В открытых файлах нет issue_id, названий типов ошибок и слов truth, provenance, inject, twin, scenario.

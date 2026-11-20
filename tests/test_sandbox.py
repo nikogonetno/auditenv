@@ -4,6 +4,7 @@ so they run inside the Docker image (make docker-verify, CI) and are skipped els
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import textwrap
@@ -69,17 +70,37 @@ class WithRoot(SandboxCase):
         self.assertEqual(report["ids"], [USER[0], USER[0], USER[1], []])
 
     def test_policy_cannot_read_private_files(self):
-        body = f"""
-            for name, path in {{"episode": {str(self.dir / "private" / "truth.json")!r},
-                                "fixture": {str(FIXTURE_TRUTH)!r}}}.items():
-                try:
-                    open(path).read(1)
-                    report[name] = "read"
-                except OSError as exc:
-                    report[name] = type(exc).__name__
-        """
-        _, report = self.probe(body)
-        self.assertEqual(report, {"episode": "PermissionError", "fixture": "PermissionError"})
+        # An episode the policy can walk into, closed only at private/ the way the Docker image closes
+        # every private/ directory. Built here, so the test does not depend on how the repo was copied
+        # (QA N-9: as root outside Docker the fixtures keep their 0644 modes).
+        open_root = Path(tempfile.mkdtemp(prefix="auditenv-open-"))
+        try:
+            os.chmod(open_root, 0o755)
+            shutil.copytree(FIXTURE_TRUTH.parent.parent, open_root / "ep")
+            for path in (open_root / "ep").rglob("*"):
+                os.chmod(path, 0o755 if path.is_dir() else 0o644)
+            os.chmod(open_root / "ep", 0o755)
+            os.chmod(open_root / "ep" / "private", 0o700)
+            body = f"""
+                for name, path in {{"episode": {str(self.dir / "private" / "truth.json")!r},
+                                    "image_like": {str(open_root / "ep" / "private" / "truth.json")!r},
+                                    "image_like_public": {str(open_root / "ep" / "public" / "manifest.json")!r}}}.items():
+                    try:
+                        open(path).read(1)
+                        report[name] = "read"
+                    except OSError as exc:
+                        report[name] = type(exc).__name__
+            """
+            _, report = self.probe(body)
+        finally:
+            shutil.rmtree(open_root, ignore_errors=True)
+        self.assertEqual(report, {"episode": "PermissionError", "image_like": "PermissionError", "image_like_public": "read"})
+
+    @unittest.skipUnless(os.path.exists("/.dockerenv"), "the image closes private/ directories; only checked inside it")
+    def test_image_closes_every_private_directory(self):
+        opened = [str(p) for d in REPO_ROOT.rglob("private") if d.is_dir()
+                  for p in [d, *d.rglob("*")] if p.stat().st_mode & 0o077]
+        self.assertEqual(opened, [])
 
     def test_policy_cannot_write_the_grader_or_signal_the_runner(self):
         body = f"""

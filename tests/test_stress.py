@@ -21,6 +21,8 @@ class Stress(unittest.TestCase):
         code, rows, summary = stress("--n", "2", "--generator", "tests.fake_generators:copy_mini", "--no-strict-volume")
         self.assertEqual((code, summary["stress"], summary["failed"]), (0, "OK", 0))
         self.assertEqual([r["seed"] for r in rows], [0, 1])
+        # QA N-7: a run without the INV-03 volume check says so in every row and in the summary.
+        self.assertEqual({r["strict_volume"] for r in rows} | {summary["strict_volume"]}, {False})
         for row in rows:
             self.assertEqual((row["failures"], row["oracle_reward"], row["issues"]), ([], 1.0, 8))
             self.assertLess(row["episode_s"], 60)
@@ -31,7 +33,7 @@ class Stress(unittest.TestCase):
         except ImportError:
             self.skipTest("auditenv.verify not merged")
         code, rows, summary = stress("--n", "1", "--generator", "tests.fake_generators:copy_mini")
-        self.assertEqual((code, summary["verifier"]), (1, "on"))
+        self.assertEqual((code, summary["verifier"], summary["strict_volume"]), (1, "on", True))
         self.assertTrue(any(f.startswith("verify:") and "INV-03" in f for f in rows[0]["failures"]))
 
     def test_nondeterministic_generator_fails(self):
