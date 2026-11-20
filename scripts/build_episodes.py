@@ -1,6 +1,6 @@
 """Build the open train or dev episodes from a versioned config file (docs/tasks/B_next.md items 9-10, case §09).
 
-    python3 scripts/build_episodes.py {train,dev} [--out episodes] [--version v1] [--generator module:function]
+    python3 scripts/build_episodes.py {train,dev} [--out episodes] [--version v2] [--generator module:function]
 
 Reads configs/<split>_<version>.json, generates every (seed, config) into <out>/<split>/<seed>/ with A's generator,
 checks that each episode loads and its truth parses, and writes <out>/<split>/index.json with seed, episode_id,
@@ -33,7 +33,7 @@ def load_generator(spec):
         return None
 
 
-def load_split(split, version="v1"):
+def load_split(split, version="v2"):
     """The (seed, normalized config) list of a split. ValueError on a seed outside the split's range."""
     path = ROOT / "configs" / f"{split}_{version}.json"
     doc = json.loads(path.read_text(encoding="utf-8"))
@@ -46,7 +46,7 @@ def load_split(split, version="v1"):
     return doc["version"], rows
 
 
-def build(split, out, generator, version="v1"):
+def build(split, out, generator, version="v2"):
     version_name, rows = load_split(split, version)
     split_dir = Path(out) / split
     split_dir.mkdir(parents=True, exist_ok=True)
@@ -70,7 +70,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("split", choices=sorted(SEED_RANGES))
     parser.add_argument("--out", default=str(ROOT / "episodes"))
-    parser.add_argument("--version", default="v1")
+    parser.add_argument("--version", default="v2")
     parser.add_argument("--generator", default=DEFAULT_GENERATOR)
     args = parser.parse_args(argv)
     generator = load_generator(args.generator)

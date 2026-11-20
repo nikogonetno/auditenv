@@ -14,12 +14,19 @@ class ConfigVersions(unittest.TestCase):
         seeds = {}
         for split in ("train", "dev"):
             version, rows = load_split(split)
-            self.assertEqual(version, f"{split}_v1")
+            self.assertEqual(version, f"{split}_v2")
             self.assertEqual(len(rows), 10)
             seeds[split] = {seed for seed, _ in rows}
             self.assertEqual(len(seeds[split]), 10)
             self.assertTrue(all(s in SEED_RANGES[split] for s in seeds[split]))
         self.assertFalse(seeds["train"] & seeds["dev"])
+
+    def test_twenty_episodes_mix_like_the_jury_set(self):
+        """Case §06: of 20 hidden episodes five are clean and five have interacting errors (QA N-3)."""
+        configs = [c for split in ("train", "dev") for _, c in load_split(split)[1]]
+        self.assertEqual(len(configs), 20)
+        self.assertEqual(sum(is_clean(c) for c in configs), 5)
+        self.assertEqual(sum(any(c["scenarios"].values()) for c in configs), 5)
 
     def test_each_split_mixes_clean_and_coupled_episodes(self):
         for split in ("train", "dev"):
