@@ -40,123 +40,123 @@
           "after": "created",
           "before": null,
           "field": null,
-          "record": "invoice/PTVG23"
+          "record": "invoice/WDZ7AF"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/88BW9G"
+          "record": "ledger/C8T69W"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/7VKPYW"
+          "record": "ledger/V5Y7EF"
         }
       ],
       "injection_id": "INJ-01",
       "issue_ids": [
-        "VW2NYG"
+        "KKVBZY"
       ],
       "order": 1,
-      "root_cause": "vendor bill keyed twice, the copy 3 days after issue with the reference retyped",
+      "root_cause": "vendor bill keyed twice, the copy 0 days after issue with the reference retyped",
       "scenario_id": null,
       "variant": "same_vendor_ref_reformatted"
     },
     {
       "changes": [
         {
-          "after": 56160000,
-          "before": 70200000,
+          "after": 193672000,
+          "before": 225200000,
           "field": "credit_minor",
-          "record": "ledger/VCXS7M"
+          "record": "ledger/865C0C"
         },
         {
-          "after": 56160000,
-          "before": 70200000,
+          "after": 193672000,
+          "before": 225200000,
           "field": "doc_amount_minor",
-          "record": "ledger/VCXS7M"
+          "record": "ledger/865C0C"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/PX2RZG"
+          "record": "ledger/Z8JFM3"
         }
       ],
       "injection_id": "INJ-02",
       "issue_ids": [
-        "RMK09Q"
+        "6JEW4B"
       ],
       "order": 2,
-      "root_cause": "allocation keyed as 56160000 instead of 70200000, the rest left on 3510",
+      "root_cause": "allocation keyed as 193672000 instead of 225200000, the rest left on 3510",
       "scenario_id": null,
       "variant": "partial_allocation"
     },
     {
       "changes": [
         {
-          "after": 328482000,
-          "before": 415800000,
+          "after": 264195000,
+          "before": 278100000,
           "field": "credit_minor",
-          "record": "ledger/WEQ1W8"
+          "record": "ledger/Y16XYQ"
         },
         {
-          "after": 328482000,
-          "before": 415800000,
+          "after": 264195000,
+          "before": 278100000,
           "field": "doc_amount_minor",
-          "record": "ledger/WEQ1W8"
+          "record": "ledger/Y16XYQ"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/A0RMF3"
+          "record": "ledger/7D9HDE"
         }
       ],
       "injection_id": "INJ-03",
       "issue_ids": [
-        "9SMJ68"
+        "G82N67"
       ],
       "order": 3,
-      "root_cause": "allocation keyed as 328482000 instead of 415800000, the rest left on 3510",
+      "root_cause": "allocation keyed as 264195000 instead of 278100000, the rest left on 3510",
       "scenario_id": null,
       "variant": "partial_allocation"
     },
     {
       "changes": [
         {
-          "after": 470494440,
-          "before": 470677740,
+          "after": 475887379,
+          "before": 475665002,
           "field": "debit_minor",
-          "record": "ledger/47AQ2R"
+          "record": "ledger/TK236K"
         },
         {
-          "after": "513.36",
-          "before": "513.56",
+          "after": "513.60",
+          "before": "513.36",
           "field": "exchange_rate",
-          "record": "ledger/47AQ2R"
+          "record": "ledger/TK236K"
         },
         {
-          "after": 470494440,
-          "before": 470677740,
+          "after": 475887379,
+          "before": 475665002,
           "field": "credit_minor",
-          "record": "ledger/9AKV3Y"
+          "record": "ledger/W86XAA"
         },
         {
-          "after": "513.36",
-          "before": "513.56",
+          "after": "513.60",
+          "before": "513.36",
           "field": "exchange_rate",
-          "record": "ledger/9AKV3Y"
+          "record": "ledger/W86XAA"
         }
       ],
       "injection_id": "INJ-04",
       "issue_ids": [
-        "Y2WYNM"
+        "4YKWEF"
       ],
       "order": 4,
-      "root_cause": "rate of the entry date 2026-09-28 used instead of the document date 2026-09-21",
+      "root_cause": "rate of the entry date 2026-10-02 used instead of the document date 2026-09-28",
       "scenario_id": null,
       "variant": "rate_of_entry_date"
     },
@@ -164,23 +164,23 @@
       "changes": [
         {
           "after": "2026-09-30T12:00:00+06:00",
-          "before": "2026-10-02T12:00:00+06:00",
+          "before": "2026-10-01T12:00:00+06:00",
           "field": "timestamp",
-          "record": "ledger/RGSRCS"
+          "record": "ledger/V2M3ED"
         },
         {
           "after": "2026-09-30T12:00:00+06:00",
-          "before": "2026-10-02T12:00:00+06:00",
+          "before": "2026-10-01T12:00:00+06:00",
           "field": "timestamp",
-          "record": "ledger/EDB949"
+          "record": "ledger/F2QPTQ"
         }
       ],
       "injection_id": "INJ-05",
       "issue_ids": [
-        "XSMDJA"
+        "CTE6J7"
       ],
       "order": 5,
-      "root_cause": "document of 2026-10-02 posted on the last day of the period 2026-09-30",
+      "root_cause": "document of 2026-10-01 posted on the last day of the period 2026-09-30",
       "scenario_id": null,
       "variant": "pulled_into_period"
     },
@@ -188,32 +188,34 @@
       "changes": [
         {
           "after": "2026-09-30T12:00:00+06:00",
-          "before": "2026-10-01T12:00:00+06:00",
+          "before": "2026-10-02T12:00:00+06:00",
           "field": "timestamp",
-          "record": "ledger/WJ3FFG"
+          "record": "ledger/Z06END"
         },
         {
           "after": "2026-09-30T12:00:00+06:00",
-          "before": "2026-10-01T12:00:00+06:00",
+          "before": "2026-10-02T12:00:00+06:00",
           "field": "timestamp",
-          "record": "ledger/B46HNE"
+          "record": "ledger/WDND67"
         }
       ],
       "injection_id": "INJ-06",
       "issue_ids": [
-        "G74V4Q"
+        "28WZ3D"
       ],
       "order": 6,
-      "root_cause": "document of 2026-10-01 posted on the last day of the period 2026-09-30",
+      "root_cause": "document of 2026-10-02 posted on the last day of the period 2026-09-30",
       "scenario_id": null,
       "variant": "pulled_into_period"
     }
   ],
   "other_lookalikes": {
-    "combined_payment": 2,
-    "late_entry": 11,
-    "midnight_utc": 1,
-    "monthly_subscription": 8,
+    "combined_payment": 5,
+    "late_entry": 10,
+    "midnight_utc": 2,
+    "monthly_subscription": 9,
+    "overpayment": 1,
+    "overpayment_and_refund": 1,
     "real_partial_payment": 2,
     "repeated_full_payment": 2,
     "split_payment": 1,
@@ -227,9 +229,9 @@
       "kind": "combined_payment",
       "mimics": "payment_allocation",
       "records": [
-        "invoice/HP7BCC",
-        "invoice/VZMQ59",
-        "payment/JNY2YW"
+        "invoice/2EJG09",
+        "invoice/S22X37",
+        "payment/4ESS95"
       ],
       "twin_id": "TW-01"
     },
@@ -238,47 +240,27 @@
       "kind": "late_entry",
       "mimics": "period_cutoff",
       "records": [
-        "payment/EJ8CR9"
+        "invoice/KWDT6H"
       ],
       "twin_id": "TW-02"
     },
     {
-      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
+      "distinguishing_feature": "a receipt whose UTC date is in another period than the company-local date it is posted on",
       "kind": "midnight_utc",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/N9ETP7"
+        "payment/NVTJ23"
       ],
       "twin_id": "TW-03"
-    },
-    {
-      "distinguishing_feature": "same vendor and amount, other vendor_ref and service month",
-      "kind": "monthly_subscription",
-      "mimics": "duplicate_invoice",
-      "records": [
-        "invoice/CX02BH",
-        "invoice/N1FFJ7"
-      ],
-      "twin_id": "TW-04"
-    },
-    {
-      "distinguishing_feature": "bank amount below the invoice, the whole payment allocated",
-      "kind": "real_partial_payment",
-      "mimics": "payment_allocation",
-      "records": [
-        "invoice/4XRXZK",
-        "payment/MAVG0H"
-      ],
-      "twin_id": "TW-05"
     },
     {
       "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
       "kind": "weekend_document",
       "mimics": "fx_rate",
       "records": [
-        "invoice/8SD0V2"
+        "invoice/XPRKRM"
       ],
-      "twin_id": "TW-06"
+      "twin_id": "TW-04"
     }
   ],
   "world": {

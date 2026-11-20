@@ -1,41 +1,41 @@
 {
   "clean": false,
-  "episode_id": "J5P6P2",
+  "episode_id": "S1CW0Y",
   "issues": [
     {
       "affected_ids": [
-        "ledger/PNKJ4J"
+        "ledger/D0JFMF"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "fx/TKBPXP",
-          "invoice/TQ0VQ6",
-          "ledger/PNKJ4J"
+          "fx/98ZHPF",
+          "invoice/GK359W",
+          "ledger/D0JFMF"
         ]
       ],
-      "expected_amount_minor": 927960,
-      "issue_id": "07SYNR",
+      "expected_amount_minor": 2361900,
+      "issue_id": "NFW8GM",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "fx_rate"
     },
     {
       "affected_ids": [
-        "invoice/6PR6VG",
-        "invoice/8JV54M"
+        "invoice/ASX8S2",
+        "invoice/E83M98"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/6PR6VG",
-          "invoice/8JV54M",
-          "ledger/G1VHCE",
-          "ledger/VYMN86"
+          "invoice/ASX8S2",
+          "invoice/E83M98",
+          "ledger/2W5MTQ",
+          "ledger/8DJD29"
         ]
       ],
-      "expected_amount_minor": 112500000,
-      "issue_id": "PZ7MFJ",
+      "expected_amount_minor": 482700000,
+      "issue_id": "SBRS19",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "duplicate_invoice"

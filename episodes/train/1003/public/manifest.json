@@ -3,11 +3,11 @@
   "counts": {
     "fx": 200,
     "invoices": 114,
-    "ledger": 364,
+    "ledger": 363,
     "payments": 51
   },
   "documents": 165,
-  "episode_id": "FFKCXC",
+  "episode_id": "FKCXCR",
   "period_end": "2026-08-31",
   "period_start": "2026-08-01",
   "rounding": {

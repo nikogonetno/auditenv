@@ -2,12 +2,12 @@
   "base_currency": "KZT",
   "counts": {
     "fx": 188,
-    "invoices": 118,
-    "ledger": 338,
-    "payments": 39
+    "invoices": 119,
+    "ledger": 336,
+    "payments": 38
   },
   "documents": 157,
-  "episode_id": "H2EYJM",
+  "episode_id": "FBR8MW",
   "period_end": "2026-01-31",
   "period_start": "2026-01-01",
   "rounding": {

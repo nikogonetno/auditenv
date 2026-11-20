@@ -3,11 +3,11 @@
   "counts": {
     "fx": 200,
     "invoices": 143,
-    "ledger": 427,
+    "ledger": 428,
     "payments": 51
   },
   "documents": 194,
-  "episode_id": "XR4PE3",
+  "episode_id": "YK8145",
   "period_end": "2026-06-30",
   "period_start": "2026-06-01",
   "rounding": {

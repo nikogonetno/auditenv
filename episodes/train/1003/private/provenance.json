@@ -37,42 +37,30 @@
     {
       "changes": [
         {
-          "after": 214797521,
-          "before": 390540335,
+          "after": 215394440,
+          "before": 331375940,
           "field": "credit_minor",
-          "record": "ledger/441TBE"
+          "record": "ledger/FM10BP"
         },
         {
-          "after": 414611,
-          "before": 753837,
+          "after": 215394440,
+          "before": 331375940,
           "field": "doc_amount_minor",
-          "record": "ledger/441TBE"
-        },
-        {
-          "after": 431196,
-          "before": 783991,
-          "field": "debit_minor",
-          "record": "ledger/90MQ5V"
-        },
-        {
-          "after": 431196,
-          "before": 783991,
-          "field": "doc_amount_minor",
-          "record": "ledger/90MQ5V"
+          "record": "ledger/FM10BP"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/GP2RRS"
+          "record": "ledger/XE8HHB"
         }
       ],
       "injection_id": "INJ-01",
       "issue_ids": [
-        "3MDS8A"
+        "A55NZ2"
       ],
       "order": 1,
-      "root_cause": "allocation keyed as 414611 instead of 753837, the rest left on 3510",
+      "root_cause": "allocation keyed as 215394440 instead of 331375940, the rest left on 3510",
       "scenario_id": null,
       "variant": "partial_allocation"
     },
@@ -82,47 +70,41 @@
           "after": "created",
           "before": null,
           "field": null,
-          "record": "invoice/ND2SZS"
+          "record": "invoice/RJNRYS"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/MR5TRY"
+          "record": "ledger/8D760H"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/ZQMK65"
+          "record": "ledger/YD31Q6"
         },
         {
           "after": [
-            "ND2SZS",
-            "ZMABJB"
+            "MABJBJ",
+            "RJNRYS"
           ],
           "before": [
-            "ZMABJB"
+            "MABJBJ"
           ],
           "field": "invoice_refs",
-          "record": "payment/SSPRJR"
+          "record": "payment/15CXTM"
         },
         {
-          "after": null,
-          "before": "removed",
-          "field": null,
-          "record": "ledger/6WAH7F"
-        },
-        {
-          "after": "created",
-          "before": null,
-          "field": null,
-          "record": "ledger/J7SWYW"
+          "after": "RJNRYS",
+          "before": "MABJBJ",
+          "field": "invoice_id",
+          "record": "ledger/AMDQS5"
         }
       ],
       "injection_id": "INJ-02",
       "issue_ids": [
-        "H9J7DQ"
+        "PAPZWZ"
       ],
       "order": 2,
       "root_cause": "vendor bill keyed twice; the payment, whose reference names both records, was allocated to the copy",
@@ -131,33 +113,36 @@
     }
   ],
   "other_lookalikes": {
-    "combined_payment": 2,
-    "late_entry": 6,
+    "combined_payment": 7,
+    "late_entry": 5,
+    "midnight_utc": 2,
     "monthly_subscription": 4,
-    "real_partial_payment": 3,
+    "overpayment_and_refund": 1,
+    "real_partial_payment": 2,
     "repeated_full_payment": 2,
     "split_payment": 1,
     "unidentified_receipt": 2,
-    "weekend_document": 3
+    "weekend_document": 1
   },
   "schema_version": "1.0",
   "seed": 1003,
   "twins": [
     {
-      "distinguishing_feature": "entered after the period, posted on the document date",
-      "kind": "late_entry",
-      "mimics": "period_cutoff",
+      "distinguishing_feature": "the payment names both records and is allocated in full to the copy; the only error is the duplicate",
+      "kind": "c2_trap",
+      "mimics": "payment_allocation",
       "records": [
-        "invoice/X4BSK8"
+        "invoice/MABJBJ",
+        "payment/15CXTM"
       ],
       "twin_id": "TW-01"
     },
     {
-      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
-      "kind": "midnight_utc",
+      "distinguishing_feature": "entered after the period, posted on the document date",
+      "kind": "late_entry",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/QJQVQY"
+        "invoice/ZBAHP7"
       ],
       "twin_id": "TW-02"
     },
@@ -166,7 +151,7 @@
       "kind": "weekend_document",
       "mimics": "fx_rate",
       "records": [
-        "payment/ZBR8EF"
+        "invoice/VZR55E"
       ],
       "twin_id": "TW-03"
     }

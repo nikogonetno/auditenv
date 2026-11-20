@@ -35,75 +35,46 @@
   "generator_version": "0.1.0",
   "injections": [],
   "other_lookalikes": {
-    "combined_payment": 1,
-    "late_entry": 10,
+    "combined_payment": 3,
+    "late_entry": 5,
     "midnight_utc": 1,
-    "monthly_subscription": 3,
-    "real_partial_payment": 3,
-    "repeated_full_payment": 2,
+    "monthly_subscription": 4,
+    "overpayment_and_refund": 1,
+    "real_partial_payment": 1,
+    "repeated_full_payment": 1,
+    "split_payment": 1,
     "unidentified_receipt": 1,
-    "weekend_document": 3
+    "weekend_document": 2
   },
   "schema_version": "1.0",
   "seed": 1001,
   "twins": [
     {
-      "distinguishing_feature": "one payment cites two different bills of the vendor and settles both",
-      "kind": "combined_payment",
-      "mimics": "duplicate_invoice",
-      "records": [
-        "invoice/6DMCXH",
-        "invoice/ABND4B",
-        "payment/19EF35"
-      ],
-      "twin_id": "TW-01"
-    },
-    {
       "distinguishing_feature": "entered after the period, posted on the document date",
       "kind": "late_entry",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/32S00F"
+        "payment/HSVQ8H"
       ],
-      "twin_id": "TW-02"
+      "twin_id": "TW-01"
     },
     {
       "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
       "kind": "midnight_utc",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/44ZNAZ"
+        "invoice/KGMSDD"
       ],
-      "twin_id": "TW-03"
-    },
-    {
-      "distinguishing_feature": "same vendor and amount, other vendor_ref and service month",
-      "kind": "monthly_subscription",
-      "mimics": "duplicate_invoice",
-      "records": [
-        "invoice/BGR1MR",
-        "invoice/EY5P54"
-      ],
-      "twin_id": "TW-04"
-    },
-    {
-      "distinguishing_feature": "bank amount below the invoice, the whole payment allocated",
-      "kind": "real_partial_payment",
-      "mimics": "payment_allocation",
-      "records": [
-        "invoice/09TS9E",
-        "payment/HFBC1Q"
-      ],
-      "twin_id": "TW-05"
+      "twin_id": "TW-02"
     },
     {
       "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
       "kind": "weekend_document",
       "mimics": "fx_rate",
       "records": [
-        "invoice/DTN0X6"
+        "payment/RY4Y7H"
       ],
-      "twin_id": "TW-06"
+      "twin_id": "TW-03"
     }
   ],
   "world": {

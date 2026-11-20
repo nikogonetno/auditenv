@@ -1,61 +1,61 @@
 {
   "clean": false,
-  "episode_id": "9G9BRN",
+  "episode_id": "5AB2TX",
   "issues": [
     {
       "affected_ids": [
-        "invoice/6SAKV4",
-        "invoice/Z46QT6"
+        "ledger/HHW4XX"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/6SAKV4",
-          "invoice/Z46QT6",
-          "ledger/3058RY",
-          "ledger/C5RMKX"
+          "fx/EXS9BT",
+          "invoice/QXSHQE",
+          "ledger/HHW4XX"
         ]
       ],
-      "expected_amount_minor": 582900000,
-      "issue_id": "0QXB5T",
-      "scenario_id": null,
-      "tolerance_minor": 1,
-      "type": "duplicate_invoice"
-    },
-    {
-      "affected_ids": [
-        "ledger/6MGVQ0"
-      ],
-      "currency": "KZT",
-      "evidence_sets": [
-        [
-          "fx/F0AMVX",
-          "invoice/E76647",
-          "ledger/6MGVQ0"
-        ]
-      ],
-      "expected_amount_minor": 262599,
-      "issue_id": "54WD5P",
+      "expected_amount_minor": 591820,
+      "issue_id": "8TGMP5",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "fx_rate"
     },
     {
       "affected_ids": [
-        "invoice/M42EVA",
-        "invoice/RRZ5ZY"
+        "invoice/HQHVR1",
+        "invoice/TX3GQM"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/M42EVA",
-          "invoice/RRZ5ZY",
-          "ledger/7DJRGQ",
-          "ledger/BRG3YC"
+          "invoice/HQHVR1",
+          "invoice/TX3GQM",
+          "ledger/0C5BJJ",
+          "ledger/CSABPS"
         ]
       ],
-      "expected_amount_minor": 362552255,
-      "issue_id": "96E3H1",
+      "expected_amount_minor": 442000000,
+      "issue_id": "PEEGZ6",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "duplicate_invoice"
+    },
+    {
+      "affected_ids": [
+        "invoice/3VTV30",
+        "invoice/J6KC3B"
+      ],
+      "currency": "CNY",
+      "evidence_sets": [
+        [
+          "invoice/3VTV30",
+          "invoice/J6KC3B",
+          "ledger/PNVFYB",
+          "ledger/Z9TRKF"
+        ]
+      ],
+      "expected_amount_minor": 5152272,
+      "issue_id": "Z70PJK",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "duplicate_invoice"

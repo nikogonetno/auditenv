@@ -35,12 +35,12 @@
   "generator_version": "0.1.0",
   "injections": [],
   "other_lookalikes": {
-    "combined_payment": 4,
-    "late_entry": 3,
-    "monthly_subscription": 5,
-    "overpayment": 1,
-    "real_partial_payment": 3,
-    "repeated_full_payment": 1,
+    "combined_payment": 6,
+    "late_entry": 4,
+    "midnight_utc": 1,
+    "monthly_subscription": 4,
+    "real_partial_payment": 2,
+    "repeated_full_payment": 2,
     "split_payment": 1,
     "unidentified_receipt": 1
   },
@@ -52,9 +52,9 @@
       "kind": "combined_payment",
       "mimics": "duplicate_invoice",
       "records": [
-        "invoice/FMNS75",
-        "invoice/Q6W92D",
-        "payment/KYHEQ2"
+        "invoice/N14ZT0",
+        "invoice/WYFEYC",
+        "payment/NJ73C8"
       ],
       "twin_id": "TW-01"
     },
@@ -63,7 +63,7 @@
       "kind": "late_entry",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/Q6M30G"
+        "invoice/VMGKFG"
       ],
       "twin_id": "TW-02"
     },
@@ -72,9 +72,50 @@
       "kind": "midnight_utc",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/AM8KGE"
+        "invoice/JTR12A"
       ],
       "twin_id": "TW-03"
+    },
+    {
+      "distinguishing_feature": "same vendor and amount, other vendor_ref and service month",
+      "kind": "monthly_subscription",
+      "mimics": "duplicate_invoice",
+      "records": [
+        "invoice/DK8TXY",
+        "invoice/RGBHJA"
+      ],
+      "twin_id": "TW-04"
+    },
+    {
+      "distinguishing_feature": "payment above the open amount, the excess lies on 3510",
+      "kind": "overpayment",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/E32C3M",
+        "payment/KK9S0R"
+      ],
+      "twin_id": "TW-05"
+    },
+    {
+      "distinguishing_feature": "payment above the invoice, the excess on 3510, later refunded out of 3510 with no invoice named",
+      "kind": "overpayment_and_refund",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/457VCC",
+        "payment/6TAJXS",
+        "payment/B9GH92"
+      ],
+      "twin_id": "TW-06"
+    },
+    {
+      "distinguishing_feature": "bank amount below the invoice, the whole payment allocated",
+      "kind": "real_partial_payment",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/Y1Q6V7",
+        "payment/K6KE5Y"
+      ],
+      "twin_id": "TW-07"
     }
   ],
   "world": {

@@ -37,165 +37,118 @@
     {
       "changes": [
         {
-          "after": 376903550,
-          "before": 378881650,
+          "after": 719644520,
+          "before": 715765540,
           "field": "credit_minor",
-          "record": "ledger/0K5TP0"
+          "record": "ledger/KG4T3N"
         },
         {
-          "after": "499.21",
-          "before": "501.83",
+          "after": "499.06",
+          "before": "496.37",
           "field": "exchange_rate",
-          "record": "ledger/0K5TP0"
+          "record": "ledger/KG4T3N"
         },
         {
-          "after": 376903550,
-          "before": 378881650,
+          "after": 719644520,
+          "before": 715765540,
           "field": "debit_minor",
-          "record": "ledger/N3PR64"
+          "record": "ledger/BD194V"
         },
         {
-          "after": "499.21",
-          "before": "501.83",
+          "after": "499.06",
+          "before": "496.37",
           "field": "exchange_rate",
-          "record": "ledger/N3PR64"
+          "record": "ledger/BD194V"
         }
       ],
       "injection_id": "INJ-01",
       "issue_ids": [
-        "AM36FK"
+        "56FRSX"
       ],
       "order": 1,
-      "root_cause": "rate of the entry date 2027-01-09 used instead of the document date 2027-01-05",
+      "root_cause": "rate of the entry date 2026-12-30 used instead of the document date 2026-12-28",
       "scenario_id": null,
       "variant": "rate_of_entry_date"
     },
     {
       "changes": [
         {
-          "after": 100795928,
-          "before": 100495730,
-          "field": "credit_minor",
-          "record": "ledger/QBNXW5"
-        },
-        {
-          "after": "500.29",
-          "before": "498.80",
-          "field": "exchange_rate",
-          "record": "ledger/QBNXW5"
-        },
-        {
-          "after": 100795928,
-          "before": 100495730,
+          "after": 555157463,
+          "before": 556358501,
           "field": "debit_minor",
-          "record": "ledger/B8DJPY"
+          "record": "ledger/0MHCAE"
         },
         {
-          "after": "500.29",
-          "before": "498.80",
+          "after": "499.21",
+          "before": "500.29",
           "field": "exchange_rate",
-          "record": "ledger/B8DJPY"
+          "record": "ledger/0MHCAE"
+        },
+        {
+          "after": 555157463,
+          "before": 556358501,
+          "field": "credit_minor",
+          "record": "ledger/9ZD05V"
+        },
+        {
+          "after": "499.21",
+          "before": "500.29",
+          "field": "exchange_rate",
+          "record": "ledger/9ZD05V"
         }
       ],
       "injection_id": "INJ-02",
       "issue_ids": [
-        "NV6F5S"
+        "ZPC2R8"
       ],
       "order": 2,
-      "root_cause": "rate of the entry date 2027-01-06 used instead of the document date 2026-12-31",
+      "root_cause": "rate of the entry date 2027-01-09 used instead of the document date 2027-01-06",
       "scenario_id": null,
       "variant": "rate_of_entry_date"
     }
   ],
   "other_lookalikes": {
-    "combined_payment": 5,
-    "late_entry": 14,
-    "monthly_subscription": 7,
+    "combined_payment": 6,
+    "late_entry": 12,
+    "midnight_utc": 1,
+    "monthly_subscription": 8,
+    "overpayment": 2,
+    "overpayment_and_refund": 1,
+    "real_partial_payment": 3,
     "repeated_full_payment": 2,
     "split_payment": 1,
-    "unidentified_receipt": 2
+    "unidentified_receipt": 2,
+    "weekend_document": 2
   },
   "schema_version": "1.0",
   "seed": 1009,
   "twins": [
     {
-      "distinguishing_feature": "one payment cites two different bills of the vendor and settles both",
-      "kind": "combined_payment",
-      "mimics": "duplicate_invoice",
-      "records": [
-        "invoice/EDVSFH",
-        "invoice/Y45VS5",
-        "payment/CXYEK8"
-      ],
-      "twin_id": "TW-01"
-    },
-    {
       "distinguishing_feature": "entered after the period, posted on the document date",
       "kind": "late_entry",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/BDEPCZ"
+        "invoice/6ZEY1Y"
       ],
-      "twin_id": "TW-02"
+      "twin_id": "TW-01"
     },
     {
       "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
       "kind": "midnight_utc",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/V7N3SE"
+        "invoice/RQ6QNF"
       ],
-      "twin_id": "TW-03"
-    },
-    {
-      "distinguishing_feature": "same vendor and amount, other vendor_ref and service month",
-      "kind": "monthly_subscription",
-      "mimics": "duplicate_invoice",
-      "records": [
-        "invoice/GWNZJT",
-        "invoice/V00DPQ"
-      ],
-      "twin_id": "TW-04"
-    },
-    {
-      "distinguishing_feature": "payment above the open amount, the excess lies on 3510",
-      "kind": "overpayment",
-      "mimics": "payment_allocation",
-      "records": [
-        "invoice/J0SNTX",
-        "payment/9MPR5W"
-      ],
-      "twin_id": "TW-05"
-    },
-    {
-      "distinguishing_feature": "bank amount below the invoice, the whole payment allocated",
-      "kind": "real_partial_payment",
-      "mimics": "payment_allocation",
-      "records": [
-        "invoice/JZBYQ3",
-        "payment/BVK4RN"
-      ],
-      "twin_id": "TW-06"
-    },
-    {
-      "distinguishing_feature": "the second payment is the full total although part was paid: allocated up to the open amount, the excess lies on 3510",
-      "kind": "repeated_full_payment",
-      "mimics": "payment_allocation",
-      "records": [
-        "invoice/R6FXJF",
-        "payment/DN4FEA",
-        "payment/XKZ003"
-      ],
-      "twin_id": "TW-07"
+      "twin_id": "TW-02"
     },
     {
       "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
       "kind": "weekend_document",
       "mimics": "fx_rate",
       "records": [
-        "invoice/SP5XRQ"
+        "payment/513B7X"
       ],
-      "twin_id": "TW-08"
+      "twin_id": "TW-03"
     }
   ],
   "world": {
