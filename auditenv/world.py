@@ -12,6 +12,7 @@ Decimal with ROUND_HALF_UP, no set or dict reaches the output unsorted, no clock
 """
 import copy
 import datetime as dt
+import functools
 import re
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Context, Decimal
@@ -133,6 +134,7 @@ def norm_ref(text):
     return re.sub(r"[^A-Z0-9]", "", (text or "").upper())
 
 
+@functools.lru_cache(maxsize=None)
 def ref_pattern(key):
     """A reference inside free text: the key's characters in order, any separators between them."""
     return re.compile(r"(?<![A-Z0-9])" + r"[^A-Z0-9]*".join(map(re.escape, key)) + r"(?![A-Z0-9])")
