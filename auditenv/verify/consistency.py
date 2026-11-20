@@ -127,11 +127,62 @@ def _entries(book, problems):
                                      f"{want[0]} {want[1]}/{want[2]}")
 
 
+def _unapplied_before(book):
+    """Base-currency 3510 balance of each payment's counterparty from the payments before it in bank order
+    (timestamp, then payment_id, as for the allocation rule). Unreadable times and amounts are reported
+    by the settlement and balance checks."""
+    keyed = []
+    for p in book.payments:
+        try:
+            keyed.append((parse_time(p.get("timestamp")), p["payment_id"], p.get("entity_id")))
+        except BookError:
+            pass
+    balance, before = {}, {}
+    for _, pid, entity in sorted(keyed):
+        before[pid] = balance.get(entity, 0)
+        for row in book.rows_by_payment.get(pid, []):
+            if row.get("account") == UNAPPLIED and row.get("doc_currency") == book.base:
+                try:
+                    change = minor(row.get("credit_minor"), "credit_minor") - minor(row.get("debit_minor"), "debit_minor")
+                except BookError:
+                    continue
+                balance[entity] = balance.get(entity, 0) + change
+    return before
+
+
+def _refund_fault(book, payment, rows, amount, held_before, customers):
+    """None for a refund to a customer by the PM decision on case §02, else why the payment is not one:
+    no invoice named, a counterparty with AR invoices, base currency only, Dr 3510 Cr 1030 for the whole
+    amount, and no more than the customer's 3510 balance from earlier payments."""
+    entity = payment.get("entity_id")
+    if payment.get("invoice_refs") is not None:
+        return "it names invoices"
+    if entity is None or entity not in customers:
+        return f"counterparty {entity} has no AR invoices"
+    if payment.get("currency") != book.base:
+        return f"refund in {payment.get('currency')}, refunds are in {book.base} only"
+    net = {}
+    try:
+        for row in rows:
+            change = minor(row.get("debit_minor"), "debit_minor") - minor(row.get("credit_minor"), "credit_minor")
+            net[row.get("account")] = net.get(row.get("account"), 0) + change
+    except BookError:
+        return "a row cannot be read"
+    if net != {UNAPPLIED: amount, BANK: -amount} or any(r.get("doc_currency") != book.base for r in rows):
+        return f"refund is not Dr {UNAPPLIED} Cr {BANK} in {book.base} for the whole amount"
+    if amount > held_before:
+        return f"customer {entity} holds {held_before} {book.base} on {UNAPPLIED} before it"
+    return None
+
+
 def _settlements(book, problems):
     """INV-09: clearing in the currency of payment and invoice, never above the invoice.
-    INV-10: a receipt is cleared plus 3510, a supplier payment is cleared in full.
+    INV-10: a receipt is cleared plus 3510. A payment out is a supplier payment cleared in full or a
+    refund to a customer out of its earlier 3510 balance (PM decision on case §02).
     INV-12: an invoice is not paid before it is issued."""
     invoices, per_invoice = book.index["invoices"], {}
+    customers = {i.get("entity_id") for i in book.invoices if i.get("direction") == "AR"}
+    held_before = _unapplied_before(book)
     for payment in book.payments:
         pid = payment["payment_id"]
         rows = book.rows_by_payment.get(pid, [])
@@ -147,8 +198,13 @@ def _settlements(book, problems):
         side = PAYMENT_SIDE.get(payment.get("direction"))
         if side is None:
             _add(problems, "SCHEMA", f"payment {pid}: direction {payment.get('direction')!r}")
-        elif cleared + held != amount or (side == "AP" and held):
+        elif side == "AR" and cleared + held != amount:
             _add(problems, "INV-10", f"payment {pid} {amount}: cleared {cleared}, on {UNAPPLIED} {held}")
+        elif side == "AP" and (cleared != amount or held):
+            fault = _refund_fault(book, payment, rows, amount, held_before.get(pid, 0), customers)
+            if fault is not None:
+                _add(problems, "INV-10", f"payment {pid} {amount} out: cleared {cleared}, on {UNAPPLIED} {held}, "
+                                         f"not a refund: {fault}")
         for row in rows:
             if not is_clearing(row):
                 continue

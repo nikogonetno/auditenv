@@ -70,6 +70,25 @@ class VerifyMini(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
 
+    def append(self, name, records):
+        """Add records to a public table and keep manifest.counts and manifest.documents in step."""
+        path = self.dir / "public" / name
+        if name.endswith(".jsonl"):
+            with open(path, "a", encoding="utf-8") as f:
+                f.writelines(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n" for r in records)
+        else:
+            with open(path, encoding="utf-8", newline="") as f:
+                fields = next(csv.reader(f))
+            with open(path, "a", encoding="utf-8", newline="") as f:
+                csv.DictWriter(f, fieldnames=fields, lineterminator="\n").writerows(records)
+        table = name.split(".")[0]
+        manifest_path = self.dir / "public" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["counts"][table] += len(records)
+        if table in ("invoices", "payments"):
+            manifest["documents"] += len(records)
+        manifest_path.write_text(json.dumps(manifest, sort_keys=True, ensure_ascii=False, indent=2), encoding="utf-8")
+
     # --- the fixture itself --------------------------------------------------------------------
 
     def test_mini_passes_without_volume_rule(self):
@@ -261,6 +280,103 @@ class VerifyMini(unittest.TestCase):
         self.assertEqual(self.codes(), {"INV-13"})
         [detail] = self.details("INV-13")
         self.assertIn("A12BT6", detail)
+
+    # --- INV-10: refund to a customer (PM decision on case §02) ---------------------------------
+
+    def overpay(self):
+        """Fabrikam (BW2C75) pays 2 100 000.00 KZT on 21.09 against its 2 000 000.00 bill S-2026-0420.
+        The bill is cleared in full, 100 000.00 KZT stays on 3510."""
+        self.edit_jsonl("payments.jsonl", ("payment_id", "7VZYZY"), lambda r: r.update(amount_minor=210000000))
+        self.edit_csv("ledger.csv", ("row_id", "K92XEE"),
+                      lambda r: r.update(debit_minor="210000000", doc_amount_minor="210000000"))
+        self.edit_csv("ledger.csv", ("row_id", "JS0ZFQ"),
+                      lambda r: r.update(credit_minor="200000000", doc_amount_minor="200000000"))
+        self.append("ledger.csv", [self.row("RFOVER", "2026-09-21", "3510", 0, 10000000, "BW2C75", "7VZYZY",
+                                            "XFKZJC", "KZT", 10000000, "1", "unapplied receipt")])
+
+    def row(self, row_id, day, account, debit, credit, entity, payment, je, currency, amount, rate, memo):
+        return {"row_id": row_id, "timestamp": f"{day}T12:00:00+05:00", "account": account, "debit_minor": debit,
+                "credit_minor": credit, "currency": "KZT", "entity_id": entity, "invoice_id": "",
+                "payment_id": payment, "je_id": je, "entered_at": f"{day}T10:30:00+05:00", "doc_currency": currency,
+                "doc_amount_minor": amount, "exchange_rate": rate, "memo": memo}
+
+    def refund(self, entity, amount, day="2026-09-25", tag="A", currency="KZT", rate="1", base=None,
+               account="3510"):
+        """A payment out to a customer that names no invoice, posted Dr 3510 Cr 1030 for the whole amount."""
+        base = amount if base is None else base
+        pid, je = f"RF{tag}PAY", f"RF{tag}JE"
+        self.append("payments.jsonl", [{
+            "doc_id": f"RF{tag}DOC", "payment_id": pid, "timestamp": f"{day}T05:00:00+00:00", "currency": currency,
+            "amount_minor": amount, "invoice_refs": None, "entity_id": entity, "direction": "out",
+            "counterparty_name_raw": "Fabrikam Inc", "entered_at": f"{day}T10:30:00+05:00",
+            "remittance_info": "Refund of overpayment"}])
+        self.append("ledger.csv", [
+            self.row(f"RF{tag}DR", day, account, base, 0, entity, pid, je, currency, amount, rate, "refund"),
+            self.row(f"RF{tag}CR", day, "1030", 0, base, entity, pid, je, currency, amount, rate, "refund")])
+        return pid
+
+    def test_overpayment_alone_passes(self):
+        self.overpay()
+        self.assertEqual(self.problems(), [])
+
+    def test_refund_after_overpayment_passes(self):
+        self.overpay()
+        self.refund("BW2C75", 10000000)
+        self.assertEqual(self.problems(), [])
+
+    def test_refund_without_unapplied_balance_is_inv10(self):
+        # The unidentified KZT receipt GDSY3H on 3510 belongs to nobody, so it does not fund Fabrikam.
+        pid = self.refund("BW2C75", 10000000)
+        self.assertEqual(self.codes(), {"INV-10"})
+        [detail] = self.details("INV-10")
+        self.assertIn(pid, detail)
+        self.assertIn("customer BW2C75 holds 0 KZT on 3510 before it", detail)
+
+    def test_refund_above_balance_is_inv10(self):
+        self.overpay()
+        pid = self.refund("BW2C75", 10000001)
+        self.assertEqual(self.codes(), {"INV-10"})
+        [detail] = self.details("INV-10")
+        self.assertIn(pid, detail)
+        self.assertIn("customer BW2C75 holds 10000000 KZT on 3510 before it", detail)
+
+    def test_refund_in_foreign_currency_is_inv10(self):
+        # Contoso (YTB3KB) holds 3 000.00 USD on 3510 from WFV9R1, but only base-currency refunds are modelled.
+        # Rate and base are right for 24.09, so nothing but INV-10 can fire.
+        pid = self.refund("YTB3KB", 100000, day="2026-09-24", currency="USD", rate="511.14", base=51114000)
+        self.assertEqual(self.codes(), {"INV-10"})
+        [detail] = self.details("INV-10")
+        self.assertIn(pid, detail)
+        self.assertIn("refund in USD, refunds are in KZT only", detail)
+
+    def test_refund_before_the_overpayment_is_inv10(self):
+        self.overpay()
+        self.refund("BW2C75", 10000000, day="2026-09-15")
+        self.assertEqual(self.codes(), {"INV-10"})
+        [detail] = self.details("INV-10")
+        self.assertIn("holds 0 KZT", detail)
+
+    def test_refunds_together_above_balance_is_inv10(self):
+        self.overpay()
+        self.refund("BW2C75", 6000000, day="2026-09-24", tag="A")
+        second = self.refund("BW2C75", 6000000, day="2026-09-25", tag="B")
+        self.assertEqual(self.codes(), {"INV-10"})
+        [detail] = self.details("INV-10")
+        self.assertIn(second, detail)
+        self.assertIn("holds 4000000 KZT", detail)
+
+    def test_refund_not_through_3510_is_inv10(self):
+        self.overpay()
+        self.refund("BW2C75", 10000000, account="6010")
+        self.assertEqual(self.codes(), {"INV-10"})
+        [detail] = self.details("INV-10")
+        self.assertIn("not Dr 3510 Cr 1030", detail)
+
+    def test_supplier_payment_short_of_its_bills_is_still_inv10(self):
+        self.edit_jsonl("payments.jsonl", ("payment_id", "AM952T"), lambda r: r.update(amount_minor=148000001))
+        [detail] = self.details("INV-10")
+        self.assertIn("AM952T", detail)
+        self.assertIn("it names invoices", detail)
 
     # --- INV-20 and QA D-4: truth itself -------------------------------------------------------
 
