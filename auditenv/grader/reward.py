@@ -24,7 +24,8 @@ def terminal_reward(f1, inspection_steps):
 
 def score(findings, truth, inspection_steps):
     """Grade one submit. The result is for the grader log only, never for the agent in eval."""
-    if not isinstance(findings, list):
+    # Exact list: a subclass could lie about its length and push fp below zero.
+    if type(findings) is not list:
         raise TypeError("findings must be a list")
     if type(inspection_steps) is not int or inspection_steps < 0:
         raise ValueError("inspection_steps must be a non-negative int")

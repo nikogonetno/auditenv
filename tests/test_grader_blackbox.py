@@ -324,11 +324,13 @@ class FindingFormatTest(GraderCase):
                 self.assertCounts(res, 1, 0, 0)
                 self.assertEqual(invalid(res), [])
 
-    def test_amount_zero_is_valid_and_can_match_within_tolerance(self):
-        issue = make_issue(amount=1, tolerance=1)
+    def test_amount_zero_is_a_valid_format(self):
+        # INV-20 keeps every truth amount above two tolerances, so 0 can never be a TP;
+        # it is still a well-formed finding, an ordinary FP rather than an invalid one.
+        issue = make_issue(amount=3, tolerance=1)
         f = _set(finding_for(issue), "amount_minor", 0)
         res = self.score([f], truth_of(issue))
-        self.assertCounts(res, 1, 0, 0)
+        self.assertCounts(res, 0, 1, 1)
         self.assertEqual(invalid(res), [])
 
     def test_bool_amount_is_rejected_even_when_value_would_match(self):
@@ -532,14 +534,18 @@ class IdFormsTest(GraderCase):
         ev = ["INVOICE/1TNM24", "F7SF66", "ledger/CKBBZ4", "ledger/KBYZZ8"]
         self.assertCounts(self.score([_set(good, "evidence", ev)], truth_of(issue)), 0, 1, 1)
 
-    def test_je_ids_are_compared_as_is(self):
-        issue = make_issue(type_="period_cutoff", affected=("je/A12BT6",), amount=187500000, currency="KZT",
-                           evidence_sets=(("invoice/VX37TR", "je/A12BT6"),))
+    def test_je_ids_are_not_records(self):
+        # SPEC 3.3/3.6: je/ never appears in truth, and a je/ finding never names the carrier row.
+        je_truth = make_issue(type_="period_cutoff", affected=("je/A12BT6",), amount=187500000, currency="KZT",
+                              evidence_sets=(("invoice/VX37TR", "je/A12BT6"),))
+        with self.assertRaises(ValueError):
+            self.score([], truth_of(je_truth))
+        issue = golden_issue("7F7V0Z")  # carrier row ledger/NP7DTC of je A12BT6
         good = finding_for(issue)
-        for ids, tp in ((["je/A12BT6"], 1), (["ledger/je/A12BT6"], 1), (["A12BT6"], 0),
-                        (["ledger/A12BT6"], 0), (["JE/A12BT6"], 0)):
+        self.assertCounts(self.score([good], truth_of(issue)), 1, 0, 0)
+        for ids in (["je/A12BT6"], ["ledger/je/A12BT6"], ["A12BT6"], ["JE/A12BT6"]):
             with self.subTest(ids=ids):
-                self.assertCounts(self.score([_set(good, "affected_ids", ids)], truth_of(issue)), tp, 1 - tp, 1 - tp)
+                self.assertCounts(self.score([_set(good, "affected_ids", ids)], truth_of(issue)), 0, 1, 1)
 
 
 # --------------------------------------------------------------------------- 3.6 / 5.2 truth validation
@@ -602,7 +608,8 @@ class TruthValidationTest(GraderCase):
             "clean": clean_truth(),
             "one-id evidence set": truth_of(make_issue(evidence_sets=(("invoice/1TNM24",),))),
             "ten-id evidence set": truth_of(make_issue(evidence_sets=(ten,))),
-            "amount 1": truth_of(make_issue(amount=1)),
+            "amount 1 with zero tolerance": truth_of(make_issue(amount=1, tolerance=0)),
+            "amount 3 with tolerance 1": truth_of(make_issue(amount=3, tolerance=1)),
             "no tolerance_minor": truth_of(make_issue(tolerance=MISSING)),
             "extra A fields": truth_of(make_issue(scenario_id="S1", tolerance=1, note="x")),
             "extra top-level fields": dict(golden(), episode_id="KARPSR"),
@@ -688,25 +695,17 @@ class AssignmentTest(GraderCase):
                 self.assertCounts(res, 1, 0, 1)
                 self.assertEqual(matched_pairs(res), {("AAAAAA", 0)})
 
-    def test_tie_with_two_findings_is_deterministic(self):
-        # SPEC 5.3 says ties go "by issue_id order, then by finding number" but does
-        # not say whether that is the outcome (AAAAAA<-0, ZZZZZZ<-1) or only the
-        # processing order. The grader returns AAAAAA<-1, ZZZZZZ<-0 (augmenting
-        # path re-routes the first issue). Reward is unaffected, so assert only what
-        # the spec fixes: a full matching that does not depend on truth order.
+    def test_tie_with_two_findings_follows_issue_id_then_finding_number(self):
+        # SPEC 5.3 now fixes the outcome: the lexicographically smallest maximum
+        # matching, so the lower issue_id gets the lower finding number.
         base = make_issue("ZZZZZZ")
         twin = dict(base, issue_id="AAAAAA")
         f = finding_for(base)
-        seen = []
         for issues in ((base, twin), (twin, base)):
             with self.subTest(first=issues[0]["issue_id"]):
                 res = self.score([f, copy.deepcopy(f)], truth_of(*issues))
                 self.assertCounts(res, 2, 0, 0)
-                pairs = matched_pairs(res)
-                self.assertEqual({p[0] for p in pairs}, {"AAAAAA", "ZZZZZZ"})
-                self.assertEqual({p[1] for p in pairs}, {0, 1})
-                seen.append(pairs)
-        self.assertEqual(seen[0], seen[1])
+                self.assertEqual(matched_pairs(res), {("AAAAAA", 0), ("ZZZZZZ", 1)})
 
     def test_issue_order_in_truth_does_not_matter(self):
         t = golden()

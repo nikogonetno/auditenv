@@ -182,6 +182,43 @@ class MaximumMatching(unittest.TestCase):
         result = score([both, only_first], self.two_twin_issues(), 0)
         self.assertEqual(counts(result), (2, 0, 0))
 
+    def test_ties_follow_issue_id_then_finding_number(self):
+        finding = {"type": "duplicate_invoice", "affected_ids": ["AAAAAA", "BBBBBB"], "amount_minor": 500,
+                   "currency": "KZT", "evidence": ["EV0001", "EV0002"]}
+        truth = self.two_twin_issues()
+        for issues in (truth["issues"], truth["issues"][::-1]):
+            result = score([finding, dict(finding)], {**truth, "issues": issues}, 0)
+            self.assertEqual(result["matched"], [{"issue_id": "I1", "finding_index": 0},
+                                                 {"issue_id": "I2", "finding_index": 1}])
+
+    def test_lexicographic_choice_matches_brute_force(self):
+        """Max size first, then issue by issue the lowest finding number; unmatched ranks last."""
+        from auditenv.grader.matcher import Finding, Issue, match
+        rng = random.Random(7)
+        ev = [f"E{k}" for k in range(4)]
+        for case in range(300):
+            n_issues, n_findings = rng.randint(1, 4), rng.randint(0, 5)
+            issues = [Issue(f"I{i}", "fx_rate", frozenset({"R"}), 100, "KZT",
+                            (frozenset(rng.sample(ev, rng.randint(1, 2))),), 1) for i in range(n_issues)]
+            findings = [Finding("fx_rate", frozenset({"R"}), 100, "KZT", frozenset(rng.sample(ev, rng.randint(0, 4))))
+                        for _ in range(n_findings)]
+
+            def assignments(i, used):
+                if i == n_issues:
+                    yield []
+                    return
+                yield from ([None] + rest for rest in assignments(i + 1, used))
+                for j in range(n_findings):
+                    if j not in used and issues[i].evidence_sets[0] <= findings[j].evidence:
+                        yield from ([j] + rest for rest in assignments(i + 1, used | {j}))
+
+            def rank(a):
+                return (-sum(x is not None for x in a), [n_findings if x is None else x for x in a])
+
+            best = min(assignments(0, frozenset()), key=rank)
+            with self.subTest(case=case):
+                self.assertEqual(match(findings, issues), [(i, j) for i, j in enumerate(best) if j is not None])
+
     def test_one_finding_closes_one_issue(self):
         finding = {"type": "duplicate_invoice", "affected_ids": ["AAAAAA", "BBBBBB"], "amount_minor": 500,
                    "currency": "KZT", "evidence": ["EV0001", "EV0002"]}
@@ -242,6 +279,53 @@ class FindingFormat(unittest.TestCase):
     def test_extra_keys_are_ignored(self):
         self.assertEqual(score([{**self.good, "comment": "found it"}], self.truth, 0)["tp"], 1)
 
+    def test_in_process_objects_cannot_fake_a_match(self):
+        """Subclasses and hostile objects only reach the grader if it runs in the agent's process.
+
+        They must still never raise, never become TP and never push counts out of range.
+        """
+        g = self.good
+
+        class AnyCurrency(str):
+            def __eq__(self, other):
+                return True
+            __hash__ = str.__hash__
+
+        class ShortList(list):
+            def __len__(self):
+                return 0
+
+        class LyingDict(dict):
+            def get(self, key, default=None):
+                raise RuntimeError("boom")
+
+        class Explosive:
+            armed = False
+
+            def __hash__(self):
+                return hash("type")
+
+            def __eq__(self, other):
+                if Explosive.armed:
+                    raise RuntimeError("boom")
+                return self is other
+
+        colliding = {Explosive(): 1, **g}  # inserted first, so looking up "type" hits it
+        Explosive.armed = True
+        hostile = {
+            "str subclass currency": {**g, "currency": AnyCurrency("XXX")},
+            "list subclass evidence": {**g, "evidence": ShortList(g["evidence"] * 6)},
+            "list subclass affected": {**g, "affected_ids": ShortList(g["affected_ids"])},
+            "dict subclass": LyingDict(g),
+            "key that raises on compare": colliding,
+        }
+        for name, finding in hostile.items():
+            with self.subTest(case=name):
+                result = score([finding], self.truth, 0)
+                self.assertEqual(counts(result), (0, 1, 8))
+        with self.assertRaises(TypeError):
+            score(ShortList([g] * 100), self.truth, 0)
+
     def test_bad_call_arguments(self):
         with self.assertRaises(TypeError):
             score({"findings": []}, self.truth, 0)
@@ -272,6 +356,11 @@ class TruthValidation(unittest.TestCase):
             "float amount": with_issue(expected_amount_minor=1.0),
             "unknown type": with_issue(type="fraud"),
             "non-string ids": with_issue(affected_ids=[1]),
+            "type as list": with_issue(type=["fx_rate"]),
+            "type as dict": with_issue(type={"t": "fx_rate"}),
+            "je id in affected_ids": with_issue(affected_ids=["je/A12BT6"]),
+            "je id in evidence": with_issue(evidence_sets=[issue["evidence_sets"][0] + ["je/A12BT6"]]),
+            "tolerance not below half the amount (INV-20)": with_issue(tolerance_minor=issue["expected_amount_minor"] // 2),
             "missing field": {**good, "issues": [{k: v for k, v in issue.items() if k != "currency"}]},
         }
         for name, truth in bad.items():

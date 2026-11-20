@@ -49,12 +49,14 @@ def normalize_id(ref):
     return ref
 
 
+# Exact type checks, not isinstance: a subclass could override __len__, __eq__ or
+# __hash__ and fake a match when the grader is called in-process (review, robustness).
 def _is_id_list(value):
-    return isinstance(value, list) and all(isinstance(x, str) for x in value)
+    return type(value) is list and all(type(x) is str for x in value)
 
 
 def _is_currency(value):
-    return isinstance(value, str) and len(value) == 3 and value.isascii() and value.isalpha() and value.isupper()
+    return type(value) is str and len(value) == 3 and value.isascii() and value.isalpha() and value.isupper()
 
 
 def _is_minor_amount(value):
@@ -63,12 +65,22 @@ def _is_minor_amount(value):
 
 
 def parse_finding(raw):
-    """Normalized Finding, or None when the finding is malformed. Malformed findings still count as FP."""
-    if not isinstance(raw, dict):
+    """Normalized Finding, or None when the finding is malformed. Malformed findings still count as FP.
+
+    Never raises: anything the agent sends is either a valid finding or an invalid one.
+    """
+    try:
+        return _parse_finding(raw)
+    except Exception:
+        return None
+
+
+def _parse_finding(raw):
+    if type(raw) is not dict:
         return None
     ftype, affected = raw.get(F_TYPE), raw.get(F_AFFECTED)
     amount, currency, evidence = raw.get(F_AMOUNT), raw.get(F_CURRENCY), raw.get(F_EVIDENCE)
-    if not isinstance(ftype, str) or ftype not in ISSUE_TYPES:
+    if type(ftype) is not str or ftype not in ISSUE_TYPES:
         return None
     if not _is_id_list(affected) or not affected:
         return None
@@ -94,10 +106,13 @@ def parse_truth(truth):
     issues = []
     for raw in truth["issues"]:
         try:
-            ok_lists = _is_id_list(raw["affected_ids"]) and isinstance(raw["evidence_sets"], list)
+            ok_lists = _is_id_list(raw["affected_ids"]) and type(raw["evidence_sets"]) is list
             ok_lists = ok_lists and all(_is_id_list(s) for s in raw["evidence_sets"])
-            if not ok_lists or not isinstance(raw["issue_id"], str):
-                raise TypeError("ids must be strings in lists")
+            if not ok_lists or type(raw["issue_id"]) is not str or type(raw["type"]) is not str:
+                raise TypeError("issue_id, type and ids must be strings, ids in lists")
+            all_ids = raw["affected_ids"] + [x for s in raw["evidence_sets"] for x in s]
+            if any(normalize_id(x).startswith("je/") or x.startswith("je/") for x in all_ids):
+                raise TypeError("je/ ids are not records (SPEC.md §3.3)")
             issue = Issue(
                 issue_id=raw["issue_id"],
                 type=raw["type"],
@@ -115,6 +130,8 @@ def parse_truth(truth):
             raise ValueError(f"issue {issue.issue_id!r}: expected_amount_minor must be a positive int")
         if type(issue.tolerance_minor) is not int or issue.tolerance_minor < 0:
             raise ValueError(f"issue {issue.issue_id!r}: tolerance_minor must be a non-negative int")
+        if issue.expected_amount_minor <= 2 * issue.tolerance_minor:
+            raise ValueError(f"issue {issue.issue_id!r}: amount must exceed two tolerances (INV-20)")
         sets_ok = issue.evidence_sets and all(0 < len(s) <= MAX_EVIDENCE for s in issue.evidence_sets)
         if not sets_ok:
             raise ValueError(f"issue {issue.issue_id!r}: every evidence set needs 1..{MAX_EVIDENCE} ids")
@@ -136,21 +153,13 @@ def eligible(finding, issue):
     )
 
 
-def match(findings, issues):
-    """Maximum matching as sorted (issue index, finding index) pairs.
-
-    Kuhn's augmenting paths, issues in issue_id order, candidates in submission
-    order, so the result is deterministic. `findings` may hold None for malformed ones.
-    """
-    candidates = [
-        [j for j, f in enumerate(findings) if f is not None and eligible(f, issue)]
-        for issue in issues
-    ]
+def _max_matching_size(candidates, issue_indexes, used):
+    """Kuhn's augmenting paths over the given issues, never touching findings in `used`."""
     owner = {}  # finding index -> issue index
 
     def augment(i, seen):
         for j in candidates[i]:
-            if j in seen:
+            if j in used or j in seen:
                 continue
             seen.add(j)
             if j not in owner or augment(owner[j], seen):
@@ -158,6 +167,30 @@ def match(findings, issues):
                 return True
         return False
 
-    for i in range(len(issues)):
-        augment(i, set())
-    return sorted((i, j) for j, i in owner.items())
+    return sum(1 for i in issue_indexes if augment(i, set()))
+
+
+def match(findings, issues):
+    """Lexicographically smallest maximum matching as (issue index, finding index) pairs.
+
+    Issues come sorted by issue_id. Each issue in turn takes the lowest finding
+    number that still allows a maximum matching of the rest (SPEC.md §5.3).
+    `findings` may hold None for malformed ones.
+    """
+    candidates = [
+        [j for j, f in enumerate(findings) if f is not None and eligible(f, issue)]
+        for issue in issues
+    ]
+    order = list(range(len(issues)))
+    used = set()
+    target = _max_matching_size(candidates, order, used)
+    pairs = []
+    for pos, i in enumerate(order):
+        later = order[pos + 1:]
+        for j in candidates[i]:
+            if j not in used and 1 + _max_matching_size(candidates, later, used | {j}) == target:
+                pairs.append((i, j))
+                used.add(j)
+                target -= 1
+                break
+    return pairs
