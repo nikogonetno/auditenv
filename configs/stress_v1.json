@@ -1,0 +1,7 @@
+{
+  "comment": "Configs the stress test cycles through, seed by seed. Extend as generator stages land: stage 1 dup + allocation, stage 2 fx + period + clean, stage 3 C1, C2, twins.",
+  "configs": [
+    {"errors": {"duplicate_invoice": 1, "payment_allocation": 1}},
+    {"errors": {"duplicate_invoice": 2, "payment_allocation": 1}}
+  ]
+}

@@ -1,8 +1,9 @@
 PY ?= python3
+N ?= 300
 IMAGE ?= auditenv:dev
 GOLDEN := tests/fixtures/golden_v0.1/episode
 
-.PHONY: verify test qa demo docker-build docker-verify clean
+.PHONY: verify test qa demo stress docker-build docker-verify clean
 
 # The one command. Same script is the default CMD of the Docker image.
 verify:
@@ -25,6 +26,10 @@ demo:
 		$(PY) -m auditenv.run --policy $$policy --mode eval --seed 0 --episode-dir $(DEMO_EPISODE) \
 			--trajectories runs/trajectories.jsonl --grader-log runs/grader_log.jsonl || exit 1; \
 	done
+
+# Generator stress test (docs/tasks/B_next.md item 7): N seeds, verifier, oracle 1.0, 60 s, determinism.
+stress:
+	$(PY) scripts/stress.py --n $(N)
 
 docker-build:
 	docker build -t $(IMAGE) .
