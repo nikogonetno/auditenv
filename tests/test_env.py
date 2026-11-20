@@ -258,3 +258,15 @@ class MiniEpisodeEndToEnd(unittest.TestCase):
         _, reward, terminated, _, info = env.step(submit(findings, episode_id=obs["manifest"]["episode_id"]))
         self.assertEqual((reward, terminated, info), (0.0, True, {}))
         self.assertEqual((env.grader_log[-1]["tp"], env.grader_log[-1]["reward"]), (8, 1 - 0.002))
+
+
+class TruthIsFixedAtReset(EnvCase):
+    def test_truth_file_changed_after_reset_does_not_change_the_grade(self):
+        env = self.env("train")
+        (Path(self.dir) / "private" / "truth.json").write_text(json.dumps({"clean": True, "issues": []}), encoding="utf-8")
+        self.assertEqual(env.step(submit([GOOD_FINDING]))[1], 1.0)
+
+    def test_malformed_truth_fails_at_reset(self):
+        (Path(self.dir) / "private" / "truth.json").write_text(json.dumps({"clean": False, "issues": []}), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            AuditEnv().reset(seed=1, config=self.config)

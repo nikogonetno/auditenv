@@ -19,7 +19,7 @@ import copy
 
 from .calculator import CalculatorError, evaluate
 from .episode import TABLES, load_episode
-from .grader import MAX_STEPS, score
+from .grader import MAX_STEPS, parse_truth, score
 from .grader.matcher import normalize_id
 from .submission import InvalidSubmission, check_submission
 
@@ -67,7 +67,12 @@ class AuditEnv:
         if "episode_dir" not in config:
             raise ValueError("config.episode_dir is required until the generator lands")
         episode = load_episode(config["episode_dir"])  # EpisodeError is a ValueError
+        # Truth is read and checked once, here: a file changed later (even by a policy that
+        # can reach the disk) cannot change the grade. ValueError on a malformed truth.
+        truth = episode.load_truth()
+        parse_truth(truth, episode.aliases)
         self._episode = episode
+        self._truth = truth
         self._steps = 0
         self._done = False
         self._terminated = self._truncated = False
@@ -196,13 +201,13 @@ class AuditEnv:
             entry = {"episode_id": episode.episode_id, "mode": self.mode, "end": "submit",
                      "inspection_steps": inspection_steps, "error": str(exc), "reward": -1.0}
             return self._end({"result": {"status": "submitted"}}, entry, terminated=True)
-        result = score(findings, episode.load_truth(), inspection_steps, episode.aliases)
+        result = score(findings, self._truth, inspection_steps, episode.aliases)
         entry = {"episode_id": episode.episode_id, "mode": self.mode, "end": "submit", **result}
         return self._end({"result": {"status": "submitted"}}, entry, terminated=True)
 
     def _finish_empty(self, body):
         episode = self._episode
-        result = score([], episode.load_truth(), MAX_STEPS, episode.aliases)
+        result = score([], self._truth, MAX_STEPS, episode.aliases)
         entry = {"episode_id": episode.episode_id, "mode": self.mode, "end": "truncated", **result}
         return self._end(body, entry, terminated=False)
 
