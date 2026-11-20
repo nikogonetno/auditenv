@@ -31,7 +31,7 @@ DEFAULTS = {
 }
 
 _PERIOD = re.compile(r"2026-(0[1-9]|1[0-2])")
-_OFFSET = re.compile(r"[+-](0\d|1[0-4]):(00|30|45)")
+_OFFSET = re.compile(r"[+-](0[0-9]|1[0-4]):(00|30|45)", re.ASCII)
 
 
 def _count(value, name):
@@ -49,8 +49,8 @@ def _int_range(value, name, low, high):
 
 
 def _counts(value, name, keys):
-    if type(value) is not dict:
-        raise ValueError(f"config.{name} must be an object")
+    if type(value) is not dict or any(type(k) is not str for k in value):
+        raise ValueError(f"config.{name} must be an object with string keys")
     unknown = sorted(set(value) - set(keys))
     if unknown:
         raise ValueError(f"unknown config.{name} key: {unknown[0]}")
@@ -63,11 +63,16 @@ def normalize_config(config=None):
     config = {} if config is None else config
     if type(config) is not dict:
         raise ValueError("config must be an object")
+    if any(type(k) is not str for k in config):
+        raise ValueError("config keys must be strings")
     unknown = sorted(set(config) - set(DEFAULTS))
     if unknown:
         raise ValueError(f"unknown config key: {unknown[0]}")
     merged = copy.deepcopy(DEFAULTS)
-    merged.update(copy.deepcopy(config))
+    try:
+        merged.update(copy.deepcopy(config))
+    except Exception:  # noqa: BLE001 - anything json.loads cannot give is a bad config, not a crash
+        raise ValueError("config values must be JSON values") from None
 
     period = merged["period"]
     if period is not None and (type(period) is not str or not _PERIOD.fullmatch(period)):
@@ -77,6 +82,7 @@ def normalize_config(config=None):
     offsets = merged["company_offsets"]
     if type(offsets) is not list or not offsets or any(type(o) is not str or not _OFFSET.fullmatch(o) for o in offsets):
         raise ValueError("config.company_offsets must be a non-empty list of offsets like \"+05:00\"")
+    offsets = ["+00:00" if o == "-00:00" else o for o in offsets]   # one offset, one spelling
     if len(set(offsets)) != len(offsets):
         raise ValueError("config.company_offsets has duplicates")
 

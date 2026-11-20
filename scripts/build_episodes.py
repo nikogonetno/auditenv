@@ -5,7 +5,7 @@
 Reads configs/<split>_<version>.json, generates every (seed, config) into <out>/<split>/<seed>/ with A's generator,
 checks that each episode loads and its truth parses, and writes <out>/<split>/index.json with seed, episode_id,
 config_sha256, clean and the number of issues. Regenerating is byte-identical, so a rebuild only shows real changes.
-Without a generator module it prints SKIP and exits 0.
+Without a generator module it prints FAIL and exits 1.
 """
 import argparse
 import importlib
@@ -75,8 +75,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     generator = load_generator(args.generator)
     if generator is None:
-        print(json.dumps({"build": "SKIP", "reason": f"{args.generator} not available yet"}))
-        return 0
+        print(json.dumps({"build": "FAIL", "reason": f"{args.generator} cannot be imported"}))
+        return 1
     doc = build(args.split, args.out, generator, args.version)
     clean = sum(e["clean"] for e in doc["episodes"])
     print(json.dumps({"build": "OK", "split": args.split, "version": doc["version"], "episodes": len(doc["episodes"]),

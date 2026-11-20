@@ -90,6 +90,11 @@ class BadInput(unittest.TestCase):
             "fx error without foreign documents": {"foreign_pct": [0, 0]},
             "C1 without foreign documents": {"foreign_pct": [0, 0], "errors": {}, "scenarios": {"C1": 1}},
             "twins reversed": {"twins": [8, 3]},
+            "offset with non-ASCII digits": {"company_offsets": ["+\u0660\u0665:00"]},
+            "plus and minus zero are one offset": {"company_offsets": ["+00:00", "-00:00"]},
+            "non-string key": {1: "x"},
+            "non-string error type": {"errors": {1: 1}},
+            "value json cannot give": {"period": iter(())},
         }
         for name, config in bad.items():
             with self.subTest(case=name), self.assertRaises(ValueError):

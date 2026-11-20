@@ -332,10 +332,16 @@ class GeneratedEpisodes(unittest.TestCase):
         self.assertFalse(Path(dirs[0]).exists())
 
     def test_missing_generator_is_a_clear_error(self):
-        try:
-            import auditenv.generate  # noqa: F401
-        except ImportError:
-            with self.assertRaises(RuntimeError):
-                AuditEnv().reset(seed=1, config={})
-        else:
-            self.skipTest("auditenv.generate exists")
+        import sys
+        from unittest import mock
+        with mock.patch.dict(sys.modules, {"auditenv.generate": None}), self.assertRaises(RuntimeError):
+            AuditEnv().reset(seed=1, config={})
+
+    def test_reset_with_a_config_runs_the_real_generator(self):
+        config = {"errors": {"duplicate_invoice": 1, "payment_allocation": 1}}
+        env = AuditEnv("train")
+        obs, _ = env.reset(seed=5, config=config)
+        again, _ = AuditEnv("train").reset(seed=5, config=config)
+        self.assertEqual(obs, again)
+        self.assertEqual(obs["manifest"]["episode_id"], env._truth["episode_id"])
+        self.assertEqual(len(env._truth["issues"]), 2)
