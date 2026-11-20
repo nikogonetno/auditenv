@@ -99,7 +99,7 @@ class Metrics(unittest.TestCase):
 
     def test_reconcile_on_mini_repeats_its_known_grade(self):
         [row] = self.rows_of("reconcile", str(MINI))
-        self.assertEqual((row["tp"], row["fp"], row["fn"]), (7, 3, 1))
+        self.assertEqual((row["tp"], row["fp"], row["fn"]), (7, 4, 1))
         self.assertEqual({kind: counts["fn"] for kind, counts in row["per_type"].items()},
                          {"duplicate_invoice": 0, "payment_allocation": 0, "fx_rate": 0, "period_cutoff": 1})
         self.assertEqual(row["missed"], ["XG1494"])  # the period error of the C1 receipt

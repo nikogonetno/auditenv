@@ -1,4 +1,4 @@
-"""Generator stage 1 (docs/tasks/A_generator.md): clean world, duplicate_invoice and payment_allocation."""
+"""Generator stages 1 and 2 (docs/tasks/A_generator.md, docs/tasks/B_stage2.md): clean world and all four error types."""
 import csv
 import hashlib
 import json
@@ -208,6 +208,148 @@ class Capacity(unittest.TestCase):
             generate_episode(3, {"company_offsets": ["-00:00"], "errors": {}}, tmp)
             texts = [p.read_text(encoding="utf-8") for p in (Path(tmp) / "public").iterdir()]
             self.assertFalse(any("-00:00" in t for t in texts))
+
+
+def read_episode(out):
+    """(invoices, payments, ledger rows by id, truth, provenance) of a generated episode."""
+    invoices = [json.loads(x) for x in (out / "public" / "invoices.jsonl").read_text(encoding="utf-8").splitlines()]
+    payments = [json.loads(x) for x in (out / "public" / "payments.jsonl").read_text(encoding="utf-8").splitlines()]
+    with open(out / "public" / "ledger.csv", encoding="utf-8") as f:
+        ledger = {r["row_id"]: r for r in csv.DictReader(f)}
+    truth = json.loads((out / "private" / "truth.json").read_text(encoding="utf-8"))
+    provenance = json.loads((out / "private" / "provenance.json").read_text(encoding="utf-8"))
+    return invoices, payments, ledger, truth, provenance
+
+
+class Stage2(unittest.TestCase):
+    """fx_rate rate_of_entry_date, period_cutoff pulled_into_period, clean companies (B_stage2.md items 1-6, 9)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.runs = {}
+        configs = {"default": {}, "rate": {"errors": {"fx_rate": 3}}, "period": {"errors": {"period_cutoff": 3}},
+                   "clean": {"errors": {}}, "october": {"period": "2026-10", "errors": {"fx_rate": 4}}}
+        for name, config in configs.items():
+            for seed in range(3):
+                out = Path(cls.tmp.name) / f"{name}{seed}"
+                generate_episode(200 + seed, config, str(out))
+                cls.runs[(name, seed)] = out
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def issues(self, name, kind):
+        for seed in range(3):
+            out = self.runs[(name, seed)]
+            invoices, payments, ledger, truth, provenance = read_episode(out)
+            policy = json.loads((out / "public" / "policy.json").read_text(encoding="utf-8"))
+            for issue in truth["issues"]:
+                if issue["type"] == kind:
+                    yield out, issue, invoices, payments, ledger, policy
+
+    def test_default_config_has_one_error_of_each_type_and_verifies(self):
+        for seed in range(3):
+            out = self.runs[("default", seed)]
+            truth = read_episode(out)[3]
+            with self.subTest(seed=seed):
+                self.assertEqual(sorted(i["type"] for i in truth["issues"]),
+                                 ["duplicate_invoice", "fx_rate", "payment_allocation", "period_cutoff"])
+                self.assertEqual(verify_episode(str(out)), [])
+                self.assertEqual(oracle_reward(out)["reward"], 1.0)
+
+    def test_rate_amount_is_the_carrier_base_against_the_rule_rate(self):
+        from decimal import ROUND_HALF_UP, Decimal
+        seen = 0
+        for out, issue, invoices, _, ledger, policy in self.issues("rate", "fx_rate"):
+            (row,) = [ledger[x.split("/")[1]] for x in issue["affected_ids"]]
+            evidence = issue["evidence_sets"][0]
+            (doc,) = [i for i in invoices if f"invoice/{i['invoice_id']}" in evidence]
+            fx_ids = [x.split("/")[1] for x in evidence if x.startswith("fx/")]
+            with open(out / "public" / "fx.csv", encoding="utf-8") as f:
+                (quote,) = [r for r in csv.DictReader(f) if r["fx_id"] in fx_ids]
+            right = int((Decimal(row["doc_amount_minor"]) * Decimal(quote["rate"])).quantize(Decimal(1), ROUND_HALF_UP))
+            base = int(row["debit_minor"]) or int(row["credit_minor"])
+            self.assertEqual(issue["expected_amount_minor"], abs(base - right))
+            self.assertGreater(issue["expected_amount_minor"], 2 * issue["tolerance_minor"])
+            self.assertEqual((issue["currency"], row["account"] in ("1210", "3310")), ("KZT", True))
+            self.assertNotEqual(row["exchange_rate"], quote["rate"])
+            self.assertEqual(quote["source_currency"], doc["currency"])
+            # Payments of the invoice clear at the booked rate: no second error in the payment entry.
+            for clearing in ledger.values():
+                if clearing["invoice_id"] == doc["invoice_id"] and clearing["payment_id"]:
+                    self.assertEqual(clearing["exchange_rate"], row["exchange_rate"])
+            seen += 1
+        self.assertEqual(seen, 9)
+        for seed in range(3):
+            self.assertEqual(verify_episode(str(self.runs[("rate", seed)])), [])
+
+    def test_rate_error_needs_another_rate_on_the_entry_date(self):
+        """31 October and 1 November 2026 are Saturday and Sunday: both take the rate of Friday 30 October."""
+        import datetime as dt
+        import random
+        from auditenv.world import entry_rate_differs
+        world = build_world(random.Random(5), normalize_config({"period": "2026-10", "foreign_pct": [100, 100],
+                                                                "errors": {}}))
+        inv = next(i for i in world.invoices.values() if i.direction == "AR")
+        inv.issued_at = dt.datetime(2026, 10, 31, 11, 0, tzinfo=world.tz)
+        inv.entered_at = dt.datetime(2026, 11, 1, 12, 0, tzinfo=world.tz)
+        self.assertFalse(entry_rate_differs(world, inv))
+        inv.entered_at = dt.datetime(2026, 11, 3, 12, 0, tzinfo=world.tz)
+        quotes = world.rates
+        if quotes.rate(inv.currency, dt.date(2026, 10, 30)) != quotes.rate(inv.currency, dt.date(2026, 11, 3)):
+            self.assertTrue(entry_rate_differs(world, inv))
+        for seed in range(3):
+            out = self.runs[("october", seed)]
+            invoices, _, ledger, truth, _ = read_episode(out)
+            self.assertEqual(verify_episode(str(out)), [])
+            for issue in truth["issues"]:
+                self.assertGreater(issue["expected_amount_minor"], 2)
+
+    def test_period_error_moves_a_base_currency_document_of_the_next_month(self):
+        import datetime as dt
+        seen = 0
+        for out, issue, invoices, _, ledger, policy in self.issues("period", "period_cutoff"):
+            (row,) = [ledger[x.split("/")[1]] for x in issue["affected_ids"]]
+            (doc,) = [i for i in invoices if f"invoice/{i['invoice_id']}" in issue["evidence_sets"][0]]
+            tz = dt.datetime.fromisoformat("2026-01-01T00:00:00" + policy["company_utc_offset"]).tzinfo
+            end = dt.date.fromisoformat(policy["period"]["end_local"])
+            dated = dt.datetime.fromisoformat(doc["issued_at"]).astimezone(tz).date()
+            self.assertEqual(doc["currency"], "KZT")
+            self.assertTrue(end < dated <= end + dt.timedelta(days=5))
+            self.assertEqual(row["timestamp"][:10], end.isoformat())
+            self.assertEqual(issue["expected_amount_minor"], int(row["debit_minor"]) or int(row["credit_minor"]))
+            self.assertEqual(sorted(issue["evidence_sets"][0]), sorted([f"invoice/{doc['invoice_id']}",
+                                                                        f"ledger/{row['row_id']}"]))
+            seen += 1
+        self.assertEqual(seen, 9)
+        for seed in range(3):
+            self.assertEqual(verify_episode(str(self.runs[("period", seed)])), [])
+
+    def test_clean_company(self):
+        for seed in range(3):
+            out = self.runs[("clean", seed)]
+            _, _, _, truth, provenance = read_episode(out)
+            kinds = {t["kind"] for t in provenance["twins"]}
+            with self.subTest(seed=seed):
+                self.assertEqual((truth["clean"], truth["issues"], provenance["injections"]), (True, [], []))
+                self.assertTrue(3 <= len(provenance["twins"]) <= 8)
+                self.assertIn("late_entry", kinds)
+                self.assertEqual(verify_episode(str(out)), [])
+        policies = [json.loads((self.runs[(n, 0)] / "public" / "policy.json").read_text()) for n in ("clean", "default")]
+        self.assertEqual(*(sorted(self.flat_keys(p)) for p in policies))
+
+    def flat_keys(self, obj, prefix=""):
+        if isinstance(obj, dict):
+            return [k for key, value in obj.items() for k in self.flat_keys(value, f"{prefix}/{key}")] or [prefix]
+        return [prefix]
+
+    def test_rate_and_period_look_alikes_are_listed(self):
+        out = self.runs[("default", 0)]
+        provenance = read_episode(out)[4]
+        kinds = {t["kind"]: t["mimics"] for t in provenance["twins"]}
+        self.assertEqual((kinds.get("weekend_document"), kinds.get("late_entry")), ("fx_rate", "period_cutoff"))
 
 
 class Determinism(unittest.TestCase):

@@ -12,7 +12,8 @@ seed argument is accepted and unused.
     b) payment_allocation  an invoice in a payment's invoice_refs is still open after its clearing
                            rows, and part of that payment is not cleared against it
     c) fx_rate             a carrier row's exchange_rate differs from fx.csv on the company-local
-                           date of the document, with no fallback to a previous business day
+                           date of the document; with no quote that day it takes the next published
+                           quote, never the previous business day the policy asks for
     d) period_cutoff       the document's UTC date and the carrier row's local date fall on
                            different sides of the period
 
@@ -39,7 +40,7 @@ PAYABLE = "3310"
 EXPLAIN = {
     "duplicate_invoice": "two AP invoices of one counterparty with the same currency and total",
     "payment_allocation": "invoice named by the payment is still open and part of the payment is not cleared to it",
-    "fx_rate": "row exchange_rate differs from fx.csv on the document date",
+    "fx_rate": "row exchange_rate differs from fx.csv on the document date or the next quoted date",
     "period_cutoff": "document UTC date and posting date fall in different periods",
 }
 
@@ -249,8 +250,12 @@ def allocation_findings(book):
     return findings
 
 
+NEXT_QUOTE_DAYS = 7     # how far rule c) looks forward for a quote
+
+
 def rate_findings(book):
-    """c) A carrier row's rate differs from fx.csv on the document's company-local date, no fallback."""
+    """c) A carrier row's rate differs from fx.csv on the document's company-local date. On a day without
+    a quote the rule takes the next quoted day, the naive reading of «the rate of the document date»."""
     findings = []
     for row, document_ref, moment in book.carriers():
         currency = _text(row.get("doc_currency"))
@@ -258,7 +263,11 @@ def rate_findings(book):
         row_rate = _decimal(row.get("exchange_rate"))
         if book.base is None or currency in (None, book.base) or day is None or row_rate is None:
             continue
-        quote = book.fx.get((day.isoformat(), currency, book.base))
+        quote = None
+        for ahead in range(NEXT_QUOTE_DAYS + 1):
+            quote = book.fx.get(((day + timedelta(days=ahead)).isoformat(), currency, book.base))
+            if quote is not None:
+                break
         quote_rate = _decimal(quote.get("rate")) if quote is not None else None
         if quote_rate is None or quote_rate == row_rate:
             continue

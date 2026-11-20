@@ -36,6 +36,8 @@ FALSE_ON_MINI = {
     ("payment_allocation", ("invoice/RRH8VY", "payment/AM952T")),
     # midnight in UTC: 21:10 +02:00 on 30 September is already 1 October for the company
     ("period_cutoff", ("ledger/TA1NB3",)),
+    # weekend document: Saturday 26 September takes Friday's rate, the rule takes Monday's quote
+    ("fx_rate", ("ledger/A35WK1",)),
 }
 # C1: the payment's UTC date is inside September, its company-local date is not.
 MISSED_ON_MINI = {("period_cutoff", ("ledger/Z3H7BB",))}
@@ -150,8 +152,8 @@ class Grade(ReconcileCase):
     def test_grade_on_the_test_book(self):
         """Observed on mini_v03: 7 TP, 3 FP, 1 FN after 5 reads, reward 2·7/9 − 1 − 0.002·5."""
         entry, _, _ = run(self.mini)
-        self.assertEqual((entry["tp"], entry["fp"], entry["fn"], entry["inspection_steps"]), (7, 3, 1, 5))
-        self.assertEqual(entry["reward"], float(2 * Fraction(7, 9) - 1 - Fraction(2, 1000) * 5))
+        self.assertEqual((entry["tp"], entry["fp"], entry["fn"], entry["inspection_steps"]), (7, 4, 1, 5))
+        self.assertEqual(entry["reward"], float(2 * Fraction(14, 19) - 1 - Fraction(2, 1000) * 5))
 
     def test_falls_for_correct_look_alike_records(self):
         _, _, rows = run(self.mini)
@@ -260,7 +262,7 @@ class Registration(unittest.TestCase):
                                "--mode", "eval"], capture_output=True, text=True, cwd=REPO_ROOT, env=env, timeout=120)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         report = json.loads(proc.stdout)
-        self.assertEqual((report["policy"], report["tp"], report["fp"], report["fn"]), ("reconcile", 7, 3, 1))
+        self.assertEqual((report["policy"], report["tp"], report["fp"], report["fn"]), ("reconcile", 7, 4, 1))
 
 
 if __name__ == "__main__":
