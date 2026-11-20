@@ -625,6 +625,51 @@ def _amount_lines(rng, world, currency, descriptions, fixed_total=None):
     return lines
 
 
+def c1_boundary_ok(year, month):
+    """True when the month's last day and the next day are business days by weekday and the holiday list."""
+    _, last = month_bounds(year, month)
+    return all(d.isoweekday() not in WEEKEND_DAYS and d not in HOLIDAYS for d in (last, last + dt.timedelta(days=1)))
+
+
+def boundary_moment(rng, world):
+    """A company-local moment within half an hour of the midnight that ends the period, whose UTC date lies
+    on the other side of the period end: just after midnight for a positive offset (UTC is still on the
+    period's last day), just before it for a negative one (UTC is already in the next month)."""
+    minutes = int(world.tz.utcoffset(None).total_seconds() // 60)
+    day1 = world.period_end + dt.timedelta(days=1)
+    if minutes > 0:
+        minute = rng.randint(0, min(29, minutes - 1))
+        return dt.datetime.combine(day1, dt.time(0, minute), world.tz)
+    minute = rng.randint(max(30, 60 + minutes), 59)
+    return dt.datetime.combine(world.period_end, dt.time(23, minute), world.tz)
+
+
+def _c1_receipt(rng, world, customers, foreign_customers):
+    """C1 anchor: a foreign invoice of the period and its full payment at the period-end midnight, in a
+    currency whose rates differ on the two boundary days. Clean: posted on the local date at its rate."""
+    end, day1 = world.period_end, world.period_end + dt.timedelta(days=1)
+    currencies = [c for c in FOREIGN if world.rates.rate(c, end) != world.rates.rate(c, day1)]
+    if not currencies:
+        raise WorldError("C1: no currency with two rates on the period boundary")
+    payers = [c for c in foreign_customers if c.currency in currencies]
+    if payers:
+        cp = rng.choice(payers)
+    else:
+        taken = {c.name for c in world.counterparties.values()}
+        cp = Counterparty(world.new_key("C"), rng.choice([n for n in CUSTOMER_NAMES if n not in taken]), "customer",
+                          rng.choice(COUNTERPARTY_OFFSETS), rng.choice(currencies))
+        world.counterparties[cp.key] = cp
+        customers.append(cp)
+        foreign_customers.append(cp)
+    first = max(world.window_start, world.period_start)
+    inv = _add_invoice(rng, world, "AR", cp,
+                       local_time(rng, world, business_day(rng, world, first, end - dt.timedelta(days=3), False)))
+    moment = boundary_moment(rng, world)
+    pay = _add_payment(rng, world, "in", cp, moment, cp.currency, inv.total_minor,
+                       _ar_remittance(rng, [inv.number], cp), [(inv.key, inv.total_minor)])
+    return inv, pay
+
+
 def entry_rate_differs(world, inv, tolerance=1):
     """True when the rate of the invoice's entry date gives a base amount more than two tolerances away
     from the rate of its document date (INV-20): the precondition of the rate_of_entry_date error."""
@@ -880,16 +925,31 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     neighbours = NEIGHBOUR_INVOICES + anchors.get("period_moves", 0)
     lookalikes = (config["twins"][1] > 0) + (config["foreign_pct"][1] > 0)
     planned = (2 * anchors.get("full_receipts", 0) + anchors.get("vendor_bills", 0)
-               + anchors.get("foreign_invoices", 0) + anchors.get("period_bills", 0) + 2 * neighbours + lookalikes)
+               + anchors.get("foreign_invoices", 0) + anchors.get("period_bills", 0) + 2 * neighbours + lookalikes
+               + 2 * anchors.get("c1_receipts", 0) + 2 * anchors.get("c2_bills", 0))
     if high < planned + reserved_documents:
         raise ValueError(f"config: documents {low}-{high} cannot hold the requested errors, "
                          f"they need at least {planned + reserved_documents}")
-    period = config["period"] or f"2026-{rng.randint(1, 12):02d}"
+    if anchors.get("c1_receipts"):
+        # C1 needs a period whose last day and the next day are both business days, so that the UTC date
+        # and the company-local date have two different rates (domain spec A, C1).
+        months = [m for m in range(1, 13) if c1_boundary_ok(2026, m)]
+        period = config["period"] or f"2026-{rng.choice(months):02d}"
+        if int(period[5:]) not in months:
+            raise ValueError(f"config: C1 needs a period whose last day and the next day are business days, "
+                             f"{period} has none")
+    else:
+        period = config["period"] or f"2026-{rng.randint(1, 12):02d}"
     year, month = int(period[:4]), int(period[5:])
     period_start, period_end = month_bounds(year, month)
     window_start = period_start - dt.timedelta(days=WINDOW_DAYS)
     window_end = period_end + dt.timedelta(days=WINDOW_DAYS)
-    offset = canonical_offset(rng.choice(config["company_offsets"]))
+    offsets = [canonical_offset(o) for o in config["company_offsets"]]
+    if anchors.get("c1_receipts"):
+        offsets = [o for o in offsets if o != "+00:00"]   # UTC and local date must be able to differ
+        if not offsets:
+            raise ValueError("config: C1 needs a company offset other than +00:00")
+    offset = rng.choice(offsets)
     industry = rng.choice(sorted(INDUSTRIES))
     foreign_pct = rng.randint(*config["foreign_pct"])
     rates = Rates(rng, window_start - dt.timedelta(days=RATE_LEAD_DAYS), window_end + dt.timedelta(days=RATE_TAIL_DAYS))
@@ -1007,6 +1067,15 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         day = window_day(period_end + dt.timedelta(days=1), period_end + dt.timedelta(days=3))
         inv = _add_invoice(rng, world, "AP", rng.choice(base_vendors), local_time(rng, world, day, 0))
         world.anchors[inv.key] = "period_cutoff"
+    for _ in range(anchors.get("c1_receipts", 0)):
+        inv, pay = _c1_receipt(rng, world, customers, foreign_customers)
+        world.anchors.update({inv.key: "C1", pay.key: "C1"})
+    for _ in range(anchors.get("c2_bills", 0)):
+        bill = new_ap(rng.choice(one_off), window_day(last=window_end - dt.timedelta(days=12)))
+        day = bank_day(rng, world, world.event_date(bill) + dt.timedelta(days=rng.randint(3, 10)))
+        pay = _add_payment(rng, world, "out", world.counterparties[bill.cp], local_time(rng, world, day), bill.currency,
+                           bill.total_minor, f"Payment for invoice {bill.vendor_ref}", [(bill.key, bill.total_minor)])
+        world.anchors.update({bill.key: "C2", pay.key: "C2"})
     for first, last in ((window_start, period_start - dt.timedelta(days=1)), (period_end + dt.timedelta(days=1), window_end)):
         for _ in range(neighbours):
             day = window_day(first, last)
