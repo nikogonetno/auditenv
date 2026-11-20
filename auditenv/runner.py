@@ -14,6 +14,12 @@ limit, or the policy closing its stdout, ends it through `env.truncate()`.
 The policy process gets a fresh empty working directory and a minimal environment. It never
 receives episode paths, files under private/, the seed of the generator or the grader log.
 The real grade is `env.grader_log[-1]`; the runner returns only what the policy itself saw.
+
+Sandbox (QA risk R-03). When the runner is root and the user `auditpolicy` exists (the Docker
+image), every policy process is dropped to that unprivileged user. It can read the code but no
+private episode files, logs or trajectories, cannot write under the repo, cannot signal the
+runner, and every process of that user is killed after the episode, including grandchildren
+that left the process group. Without root (a developer machine) the policy runs as the same user.
 """
 import hashlib
 import json
@@ -32,6 +38,8 @@ from .server import MAX_MESSAGE_BYTES, BadMessage, decode_message
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TIME_LIMIT_S = 60.0       # case §07: 60 seconds per episode
 EXIT_GRACE_S = 2.0        # after the end: close stdin, wait this long, then kill
+POLICY_USER = "auditpolicy"  # created in the Docker image
+SANDBOX_MODES = ("auto", "required", "off")
 TOO_LARGE = "message too large"  # the BadMessage code decode_message gives for oversize input
 MAX_RECORDED_ACTION = 1 << 16  # bigger actions are recorded as size and sha256 only
 TRAJECTORY_KEYS = ("episode_id", "step", "action", "observation", "reward", "terminated", "truncated")
@@ -161,6 +169,48 @@ def policy_environment():
     return env
 
 
+def sandbox_user():
+    """(uid, gid) of POLICY_USER when this process may drop a child to it, else None."""
+    if os.name != "posix" or os.geteuid() != 0:
+        return None
+    try:
+        import pwd
+        entry = pwd.getpwnam(POLICY_USER)
+    except (ImportError, KeyError):
+        return None
+    return (entry.pw_uid, entry.pw_gid) if entry.pw_uid != 0 else None
+
+
+def _processes_of(uid):
+    """Live (not zombie) pids whose real uid is `uid`, from /proc."""
+    pids = []
+    for name in os.listdir("/proc"):
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"/proc/{name}/status", encoding="ascii", errors="replace") as f:
+                fields = dict(line.split(":", 1) for line in f if ":" in line)
+        except OSError:
+            continue
+        if int(fields.get("Uid", "-1 0").split()[0]) == uid and not fields.get("State", "").strip().startswith("Z"):
+            pids.append(int(name))
+    return pids
+
+
+def _kill_user(uid):
+    """Kill every process of the sandbox user, also ones that called setsid() to leave the group."""
+    for _ in range(20):
+        pids = _processes_of(uid)
+        if not pids:
+            return
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        time.sleep(0.05)
+
+
 def _read_lines(stream, lines, stop):
     """Reader thread: policy stdout -> queue of raw lines, _OVERSIZE markers and a final _EOF."""
     def put(item):
@@ -224,25 +274,38 @@ def _kill(proc):
         pass
 
 
-def run_subprocess_episode(policy_cmd, env, seed, config, time_limit=TIME_LIMIT_S, trajectory=None):
+def run_subprocess_episode(policy_cmd, env, seed, config, time_limit=TIME_LIMIT_S, trajectory=None,
+                           sandbox="auto"):
     """Run one episode against a policy process started from policy_cmd (an argv list).
 
     Returns {"episode_id", "steps", "terminated", "truncated", "seen_reward", "wall_time_s"}.
     `steps` counts policy lines passed to env.step; `seen_reward` is what the policy saw (0 in eval).
     A broken config (env.reset) or a command that cannot start (OSError) raises; nothing the
-    policy does after it starts does.
+    policy does after it starts does. sandbox: "auto" drops the policy to POLICY_USER when
+    possible, "required" raises RuntimeError when it is not, "off" never drops.
     """
+    if sandbox not in SANDBOX_MODES:
+        raise ValueError(f"sandbox must be one of {SANDBOX_MODES}")
+    user = None if sandbox == "off" else sandbox_user()
+    if sandbox == "required" and user is None:
+        raise RuntimeError(f"sandbox unavailable: run as root where the user {POLICY_USER} exists")
     transcript = _Transcript(env, seed, config, trajectory)
     started = time.monotonic()
     deadline = started + float(time_limit)
     # The policy may rename, replace or fill its working directory; cleanup must still not raise.
     parent = tempfile.mkdtemp(prefix="auditenv-policy-")
     workdir = os.path.join(parent, "work")
-    os.mkdir(workdir)
+    os.mkdir(workdir, 0o700)
+    drop = {}
+    if user is not None:
+        uid, gid = user
+        os.chmod(parent, 0o711)  # the policy can enter its workdir, not list or rename the parent
+        os.chown(workdir, uid, gid)
+        drop = {"user": uid, "group": gid, "extra_groups": [], "umask": 0o077}
     try:
         proc = subprocess.Popen(
             list(policy_cmd), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            cwd=workdir, env=policy_environment(), start_new_session=hasattr(os, "killpg"),
+            cwd=workdir, env=policy_environment(), start_new_session=hasattr(os, "killpg"), **drop,
         )
         lines, outbox, stop = queue.Queue(maxsize=_READ_QUEUE), queue.Queue(), threading.Event()
         reader = threading.Thread(target=_read_lines, args=(proc.stdout, lines, stop), daemon=True)
@@ -266,6 +329,7 @@ def run_subprocess_episode(policy_cmd, env, seed, config, time_limit=TIME_LIMIT_
                         message = transcript.step(*decode_line(raw))
                 outbox.put(encode_line(message).encode("utf-8"))
             result = transcript.result(started)
+            result["sandbox"] = "uid" if user is not None else "none"
         finally:
             outbox.put(None)  # close the policy's stdin after the last message
             stop.set()        # the reader drains the pipe until EOF and keeps nothing
@@ -274,6 +338,8 @@ def run_subprocess_episode(policy_cmd, env, seed, config, time_limit=TIME_LIMIT_
             except subprocess.TimeoutExpired:
                 pass
             _kill(proc)
+            if user is not None:
+                _kill_user(user[0])
             writer.join(timeout=EXIT_GRACE_S)
             reader.join(timeout=EXIT_GRACE_S)
             if not reader.is_alive():

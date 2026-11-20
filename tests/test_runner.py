@@ -344,7 +344,9 @@ class HostilePolicyRegressions(RunnerCase):
             print(json.dumps({{"action": "submit", "findings": {{"episode_id": "{EPISODE_ID}", "findings": []}}}}), flush=True)
         """
         env, result, _ = self.run_subprocess(fake_policy(swap))
-        self.assertTrue(result["terminated"])
+        # Same user: the swap works and the policy submits. In the sandbox the rename is refused,
+        # the policy dies and the episode is truncated. Either way the runner returns.
+        self.assertTrue(result["terminated"] or result["truncated"])
         self.assertEqual(env.grader_log[-1]["reward"], -1.0)
 
     def test_line_separators_inside_strings_keep_one_record_per_line(self):
