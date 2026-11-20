@@ -17,6 +17,7 @@ import os
 import sys
 
 from .env import MODES, AuditEnv
+from .private_args import hide_private_args
 from .runner import SANDBOX_MODES, TIME_LIMIT_S, encode_line, run_inprocess_episode, run_subprocess_episode
 
 SUBPROCESS_POLICIES = {"random": "policies.random_policy", "reconcile": "policies.reconcile", "flag_all": "policies.flag_all"}
@@ -25,7 +26,8 @@ REPORT_KEYS = ("tp", "fp", "fn", "precision", "recall", "f1", "reward")
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(prog="python -m auditenv.run", description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(prog="python -m auditenv.run", description=__doc__.split("\n\n")[0],
+                                     allow_abbrev=False)  # see auditenv.private_args
     parser.add_argument("--policy", required=True, choices=POLICIES)
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--episode-dir", help="a prepared episode in the case §03 layout")
@@ -76,7 +78,8 @@ def load_config(text):
 
 
 def main(argv=None):
-    args = parse_args(argv)
+    # The seed and config never stay in this process's command line (QA N-1).
+    args = parse_args(hide_private_args() if argv is None else argv)
     os.umask(0o077)  # trajectories and the grader log stay unreadable for the sandbox user
     env = AuditEnv(args.mode)
     try:
