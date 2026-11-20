@@ -16,8 +16,11 @@ In "train" mode the terminal reward goes back to the policy; in "eval" mode the 
 always sees 0 and empty info, and the grade stays in grader_log.
 """
 import copy
+import shutil
+import tempfile
 
 from .calculator import CalculatorError, evaluate
+from .config import normalize_config
 from .episode import TABLES, load_episode
 from .grader import MAX_STEPS, parse_truth, score
 from .grader.matcher import normalize_id
@@ -26,7 +29,6 @@ from .submission import InvalidSubmission, check_submission
 PAGE_LIMIT = 50
 MAX_ID_LENGTH = 200
 MODES = ("train", "eval")
-CONFIG_KEYS = {"episode_dir"}
 TASK = (
     "You audit one company for one reporting period. Read records with list_records, get_record and "
     "get_document, check arithmetic with calculator, then call submit once with findings.json: "
@@ -48,29 +50,35 @@ class ActionError(Exception):
 
 
 class AuditEnv:
-    def __init__(self, mode="train"):
+    def __init__(self, mode="train", generator=None):
+        """generator(seed, normalized_config, out_dir) writes an episode; default auditenv.generate."""
         if mode not in MODES:
             raise ValueError("mode must be 'train' or 'eval'")
         self.mode = mode
+        self._generator = generator
         self.grader_log = []
         self._episode = None
 
     # ------------------------------------------------------------------ contract
     def reset(self, seed=None, config=None):
-        """Start a fresh episode. config {"episode_dir": path} loads a prepared episode."""
+        """Start a fresh episode.
+
+        config {"episode_dir": path} loads a prepared episode and allows no other key. Any other
+        config is a generator config (SPEC §4.4): it is normalized, the episode is generated from
+        (seed, config) into a private temp dir, loaded with its truth and the dir is deleted, so
+        nothing of it stays on disk. ValueError on a bad config, seed or episode.
+        """
         config = {} if config is None else config
         if type(config) is not dict:
             raise ValueError("config must be an object")
-        unknown = sorted(set(config) - CONFIG_KEYS)
-        if unknown:
-            raise ValueError(f"unknown config key: {unknown[0]}")
-        if "episode_dir" not in config:
-            raise ValueError("config.episode_dir is required until the generator lands")
-        episode = load_episode(config["episode_dir"])  # EpisodeError is a ValueError
-        # Truth is read and checked once, here: a file changed later (even by a policy that
-        # can reach the disk) cannot change the grade. ValueError on a malformed truth.
-        truth = episode.load_truth()
-        parse_truth(truth, episode.aliases)
+        if "episode_dir" in config:
+            if set(config) != {"episode_dir"}:
+                raise ValueError("config.episode_dir allows no other key")
+            episode, truth = self._load(config["episode_dir"])
+        else:
+            if type(seed) is not int or seed < 0:
+                raise ValueError("seed must be a non-negative int")
+            episode, truth = self._generate(seed, normalize_config(config))
         self._episode = episode
         self._truth = truth
         self._steps = 0
@@ -85,6 +93,28 @@ class AuditEnv:
             "steps_left": MAX_STEPS,
         }
         return observation, {}
+
+    def _load(self, directory):
+        episode = load_episode(directory)  # EpisodeError is a ValueError
+        # Truth is read and checked once, here: a file changed later (even by a policy that
+        # can reach the disk) cannot change the grade. ValueError on a malformed truth.
+        truth = episode.load_truth()
+        parse_truth(truth, episode.aliases)
+        return episode, truth
+
+    def _generate(self, seed, config):
+        generator = self._generator
+        if generator is None:
+            try:
+                from .generate import generate_episode as generator  # role A
+            except ImportError:
+                raise RuntimeError("the episode generator auditenv.generate is not available yet") from None
+        workdir = tempfile.mkdtemp(prefix="auditenv-episode-")  # 0700: never readable by a policy
+        try:
+            generator(seed, config, workdir)
+            return self._load(workdir)
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
 
     def step(self, action):
         if self._episode is None:

@@ -316,9 +316,6 @@ class CommandLine(RunnerCase):
         self.assertIn("auditenv.run:", proc.stderr)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class HostilePolicyRegressions(RunnerCase):
     """Fixes after the independent attack on the runner (SPEC §4.3)."""
@@ -364,3 +361,20 @@ class HostilePolicyRegressions(RunnerCase):
         rows = [json.loads(line) for line in trajectory.getvalue().splitlines()]
         self.assertEqual(set(rows[1]["action"]), {"oversize_action"})
         self.assertLess(len(trajectory.getvalue()), 20_000)
+
+
+class CliConfig(CommandLine):
+    def test_generator_config_errors_are_clean(self):
+        for config in ('{"errors": {"fraud": 1}}', "[1]", "{not json", str(self.root / "missing.json")):
+            with self.subTest(config=config):
+                proc = self.run_cli("--policy", "random", "--config", config)
+                self.assertEqual(proc.returncode, 2)
+                self.assertIn("auditenv.run:", proc.stderr)
+
+    def test_episode_dir_and_config_exclude_each_other(self):
+        proc = self.run_cli("--policy", "random", "--episode-dir", str(self.dir), "--config", "{}")
+        self.assertEqual(proc.returncode, 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,6 +1,7 @@
 """reset/step contract of case §04 on a tiny episode written to a temp dir (SPEC §4.2, §4.3)."""
 import copy
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,7 +46,8 @@ class ResetAndStep(EnvCase):
         self.assertEqual(obs["steps_left"], MAX_STEPS - 1)
 
     def test_bad_config(self):
-        for config in ({}, {"episode_dir": str(self.dir), "colour": 1}, "x", {"episode_dir": str(self.dir) + "_missing"}):
+        for config in ({"episode_dir": str(self.dir), "colour": 1}, {"colour": 1}, "x",
+                       {"episode_dir": str(self.dir) + "_missing"}, {"episode_dir": str(self.dir), "errors": {}}):
             with self.subTest(config=config), self.assertRaises(ValueError):
                 AuditEnv().reset(seed=1, config=config)
         with self.assertRaises(ValueError):
@@ -270,3 +272,70 @@ class TruthIsFixedAtReset(EnvCase):
         (Path(self.dir) / "private" / "truth.json").write_text(json.dumps({"clean": False, "issues": []}), encoding="utf-8")
         with self.assertRaises(ValueError):
             AuditEnv().reset(seed=1, config=self.config)
+
+
+MINI = Path(__file__).resolve().parent / "fixtures" / "mini_v03"
+
+
+class GeneratedEpisodes(unittest.TestCase):
+    """reset(seed, config) without episode_dir runs the generator (docs/tasks/B_next.md item 5).
+
+    The generator is A's; here a test double copies mini_v03 into the directory it is given.
+    """
+
+    def setUp(self):
+        self.calls = []
+
+        def fake_generator(seed, config, out_dir):
+            self.calls.append((seed, copy.deepcopy(config), out_dir))
+            shutil.copytree(MINI, out_dir, dirs_exist_ok=True)
+
+        self.generator = fake_generator
+
+    def test_generated_episode_is_loaded_and_its_files_are_gone(self):
+        env = AuditEnv("eval", generator=self.generator)
+        obs, info = env.reset(seed=7, config={"errors": {"fx_rate": 2}})
+        self.assertEqual((obs["manifest"]["episode_id"], info), ("KARPSR", {}))
+        seed, config, out_dir = self.calls[0]
+        self.assertEqual((seed, config["errors"]["fx_rate"], config["documents"]), (7, 2, [150, 200]))
+        self.assertFalse(Path(out_dir).exists())
+        truth = json.loads((MINI / "private" / "truth.json").read_text(encoding="utf-8"))
+        findings = [{"type": i["type"], "affected_ids": i["affected_ids"], "claimed_amount_minor": i["expected_amount_minor"],
+                     "currency": i["currency"], "evidence_ids": i["evidence_sets"][0], "explanation": "oracle"}
+                    for i in truth["issues"]]
+        env.step(submit(findings, episode_id="KARPSR"))
+        self.assertEqual(env.grader_log[-1]["reward"], 1.0)
+
+    def test_key_order_does_not_reach_the_generator(self):
+        env = AuditEnv(generator=self.generator)
+        env.reset(seed=1, config={"twins": [2, 4], "period": "2026-09"})
+        env.reset(seed=1, config={"period": "2026-09", "twins": [2, 4]})
+        self.assertEqual(self.calls[0][:2], self.calls[1][:2])
+
+    def test_bad_seed_or_config_fails_before_generating(self):
+        env = AuditEnv(generator=self.generator)
+        for seed, config in ((None, {}), (-1, {}), (True, {}), ("1", {}), (1, {"errors": {"fraud": 1}}),
+                             (1, {"documents": [5, 10]})):
+            with self.subTest(seed=seed, config=config), self.assertRaises(ValueError):
+                env.reset(seed=seed, config=config)
+        self.assertEqual(self.calls, [])
+
+    def test_broken_generator_output_is_a_value_error_and_leaves_nothing(self):
+        dirs = []
+
+        def broken(seed, config, out_dir):
+            dirs.append(out_dir)
+            (Path(out_dir) / "public").mkdir()
+
+        with self.assertRaises(ValueError):
+            AuditEnv(generator=broken).reset(seed=1, config={})
+        self.assertFalse(Path(dirs[0]).exists())
+
+    def test_missing_generator_is_a_clear_error(self):
+        try:
+            import auditenv.generate  # noqa: F401
+        except ImportError:
+            with self.assertRaises(RuntimeError):
+                AuditEnv().reset(seed=1, config={})
+        else:
+            self.skipTest("auditenv.generate exists")
