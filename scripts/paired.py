@@ -11,8 +11,8 @@ Two kinds of check alternate, over the given episodes in turn, until n checks ar
              reward on both, the copy's truth has the same multiset of (type, expected_amount_minor,
              currency) as the original, and every id in either truth names a record of its episode
 
-Without the transform function (A's auditenv.transform) every check is a repeat check and the summary
-says the transform is skipped. Prints one JSON line per check and a summary line; exit 1 if any
+The default transform is auditenv.transform.permute_and_rename. Without a transform function every check is
+a repeat check and the summary says the transform is skipped. Prints one JSON line per check and a summary line; exit 1 if any
 check fails, 0 otherwise (a skip is not a failure), 2 on bad arguments.
 """
 import argparse

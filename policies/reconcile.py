@@ -297,10 +297,36 @@ def period_findings(book):
 RULES = (duplicate_findings, allocation_findings, rate_findings, period_findings)
 
 
+# Record content that survives a permutation of rows and a change of ids (case §10 paired checks).
+CONTENT = {
+    "ledger": ("timestamp", "account", "debit_minor", "credit_minor", "doc_currency", "doc_amount_minor",
+               "exchange_rate", "memo"),
+    "invoice": ("issued_at", "currency", "total_minor", "invoice_number", "vendor_ref", "po_ref",
+                "counterparty_name", "entered_at"),
+    "payment": ("timestamp", "currency", "amount_minor", "remittance_info", "counterparty_name_raw", "entered_at"),
+}
+
+
+def _content_key(book, rows, finding):
+    """Sort key of a finding from what its records say, never from their ids."""
+    parts = []
+    for ref in finding["affected_ids"]:
+        table, _, rid = ref.partition("/")
+        record = {"ledger": rows, "invoice": book.invoices, "payment": book.payments}.get(table, {}).get(rid) or {}
+        parts.append(tuple(repr(record.get(c)) for c in CONTENT.get(table, ())))
+    return finding["claimed_amount_minor"], finding["currency"], tuple(sorted(parts))
+
+
 def reconcile(manifest, tables):
-    """Findings of the four rules over the records read, in rule order, at most 30."""
+    """Findings of the four rules over the records read, in rule order, at most 30. Inside a rule the
+    findings go in the order of their records' content, so the same book with other ids and row order
+    gets the same findings (the oracle and this policy keep their reward under the paired checks)."""
     book = Book(manifest, tables)
-    findings = [f for rule in RULES for f in rule(book) if f is not None]
+    rows = {r["row_id"]: r for r in book.ledger}
+    findings = []
+    for rule in RULES:
+        found = [f for f in rule(book) if f is not None]
+        findings += sorted(found, key=lambda f: _content_key(book, rows, f))
     return findings[:MAX_FINDINGS]
 
 
