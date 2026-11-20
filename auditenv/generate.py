@@ -35,6 +35,7 @@ LEDGER_COLUMNS = ("row_id", "timestamp", "account", "debit_minor", "credit_minor
 FX_COLUMNS = ("date", "source_currency", "target_currency", "rate", "fx_id")
 # INV-23 and CLAUDE.md: never in a public file.
 PRIVATE_WORDS = ("truth", "provenance", "inject", "twin", "scenario", "issue_id")
+LEAK = re.compile("|".join(re.escape(w).replace("_", "[ _-]?") for w in (*PRIVATE_WORDS, *ISSUE_TYPES)), re.IGNORECASE)
 
 
 class IdSource:
@@ -47,7 +48,7 @@ class IdSource:
     def new(self, avoid=()):
         while True:
             candidate = "".join(self.rng.choice(CROCKFORD) for _ in range(6))
-            if candidate not in self.taken and candidate not in avoid:
+            if candidate not in self.taken and candidate not in avoid and not LEAK.search(candidate):
                 self.taken.add(candidate)
                 return candidate
 
@@ -391,9 +392,9 @@ def _render(rng, seed, config, world, clean_book, final, book, injections):
         "public/fx.csv": _csv(tables["fx"], FX_COLUMNS),
     }
     text = "".join(public[k] for k in sorted(public))
-    for word in (*PRIVATE_WORDS, *ISSUE_TYPES):
-        if re.search(re.escape(word).replace("_", "[ _-]?"), text, re.IGNORECASE):
-            raise WorldError(f"INV-23: {word!r} in a public file")
+    leak = LEAK.search(text)
+    if leak:
+        raise WorldError(f"INV-23: {leak.group(0)!r} in a public file")
     truth, issue_ids = _truth(final, book, injections, ids, text)
     changes = _changes(world, clean_book, final, book, ids, injections)
     targets = set().union(*(inj.docs for inj in injections)) if injections else set()

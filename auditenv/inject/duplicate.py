@@ -13,16 +13,21 @@ from ..world import VENDOR_KINDS, entered_time, ref_shape, ref_variants
 VARIANT = "same_vendor_ref_reformatted"
 
 
-def reformat(rng, world, bill):
-    """The bill's reference as another clerk keys it: other separators, preferably a shape this vendor's
-    other bills already show, else one any clean bill shows."""
+def _options(world, bill):
+    """(retyped references whose shape this vendor's other bills show, ... any clean bill shows, all)."""
     style = world.counterparties[bill.cp].style
     options = [v for v in ref_variants(bill.ref_parts, style) if v != bill.vendor_ref]
     others = [i for i in world.invoices.values() if i.direction == "AP" and i.key != bill.key]
     vendor = {ref_shape(i.vendor_ref) for i in others if i.cp == bill.cp}
     seen = {ref_shape(i.vendor_ref) for i in others}
-    return rng.choice([v for v in options if ref_shape(v) in vendor]
-                      or [v for v in options if ref_shape(v) in seen] or options)
+    return ([v for v in options if ref_shape(v) in vendor], [v for v in options if ref_shape(v) in seen], options)
+
+
+def reformat(rng, world, bill):
+    """The bill's reference as another clerk keys it: other separators, preferably a shape this vendor's
+    other bills already show, else one any clean bill shows."""
+    vendor, seen, options = _options(world, bill)
+    return rng.choice(vendor or seen or options)
 
 
 def inject(rng, world, used):
@@ -40,7 +45,8 @@ def inject(rng, world, used):
                   and not used.intersection(cited_by.get(i.key, ()))]
     if not candidates:
         raise ValueError("config: no vendor bill left for duplicate_invoice")
-    bill = rng.choice(candidates)
+    # Small books: prefer bills whose retyped reference can take a shape the clean bills show.
+    bill = rng.choice([c for c in candidates if _options(world, c)[1]] or candidates)
     citing = sorted(cited_by.get(bill.key, ()))
     twin = copy.deepcopy(bill)
     twin.key = world.new_key("I")

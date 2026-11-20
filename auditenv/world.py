@@ -15,7 +15,7 @@ import datetime as dt
 import functools
 import re
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Context, Decimal
+from decimal import ROUND_HALF_UP, Context, Decimal, DivisionByZero, InvalidOperation, Overflow
 
 BASE = "KZT"
 FOREIGN = ("CNY", "EUR", "RUB", "USD")
@@ -27,7 +27,8 @@ HOLIDAYS = tuple(dt.date.fromisoformat(d) for d in (
     "2026-03-24", "2026-05-01", "2026-05-07", "2026-05-11", "2026-07-06", "2026-08-31", "2026-10-26",
     "2026-12-16", "2026-12-17", "2027-01-01", "2027-01-07"))
 WINDOW_DAYS = 7
-NEIGHBOUR_INVOICES = 8                   # per side of the period: 16 rows, INV-03 asks for 10
+NEIGHBOUR_INVOICES = 6                   # per side of the period: 12 rows, INV-03 asks for 10; more when
+                                         # an error moves documents out of the neighbour count (anchors)
 RATE_LEAD_DAYS = 14                      # rates start this many days before the window
 RATE_TAIL_DAYS = 14                      # and run past it, so every entered_at date has a rate
 # Clean-world shares, domain spec A world table.
@@ -40,7 +41,10 @@ COMBINED_AR_SHARE = 0.05                 # a customer pays two invoices with one
 COMBINED_AP_SHARE = 0.08                 # we pay two bills of one vendor with one payment
 CLERK_RETYPE_SHARE = 0.2                 # bills whose vendor reference the clerk keyed with other separators
 CENTS_SHARE_FOREIGN, CENTS_SHARE_BASE = 0.5, 0.2
-_DECIMAL = Context(prec=34, rounding=ROUND_HALF_UP)
+_DECIMAL = Context(prec=34, rounding=ROUND_HALF_UP, Emin=-999999, Emax=999999, capitals=1, clamp=0, flags=[],
+                   traps=[InvalidOperation, DivisionByZero, Overflow])
+MAX_CONTRACTS_PER_VENDOR = 4
+REPEATED_FULL_TWINS = (1, 2)              # planted in every book that has room: clean and erroneous alike
 
 # Rate random walk in hundredths of KZT per unit: start level, daily step, floor.
 RATE_WALK = {"CNY": (7090, 30, 5000), "EUR": (59800, 240, 40000), "RUB": (562, 4, 300), "USD": (51200, 220, 35000)}
@@ -83,23 +87,27 @@ VENDOR_KINDS = {
     "security": ("7210", ("Security services", "Office cleaning"), True),
     "leasing": ("7110", ("Truck leasing", "Forklift rental"), True),
 }
-MONTHLY_KINDS = tuple(sorted(k for k, v in VENDOR_KINDS.items() if v[2]))
-ONE_OFF_KINDS = ("freight", "freight", "warehouse", "office")
 # Well-known fictional names only, so no record matches a real company. No digits in any name.
 CUSTOMER_NAMES = (
     "Contoso Ltd", "Fabrikam Inc", "Adventure Works LLC", "Wingtip Toys GmbH", "Litware Inc", "Proseware LLC",
     "Fourth Coffee LLP", "Coho Winery Ltd", "Lucerne Publishing", "Trey Research Inc", "Woodgrove Trading LLP",
     "Blue Yonder Airlines", "Southridge Video LLC", "Relecloud Ltd", "VanArsdel Ltd", "Bellows Trading LLP",
     "Datum Corporation", "Lamna Foods LLP", "Fincher Architects", "Munson Pickles Ltd")
-# (name, vendor_ref prefix). Prefixes are unique, two or three letters, never a lone S like the
-# customer invoice numbers, so no reference text can name a bill of another vendor.
+# (name, vendor_ref prefix, kinds the name fits). Prefixes are unique, two or three letters, never a lone S
+# like the customer invoice numbers, so no reference text can name a bill of another vendor.
 VENDOR_NAMES = (
-    ("Northwind Freight GmbH", "NWF"), ("Tailspin Hosting LLP", "TSH"), ("Wide World Importers", "WWI"),
-    ("Consolidated Messenger LLP", "CM"), ("Coho Storage LLP", "CHS"), ("Woodgrove Office Supply", "WOS"),
-    ("Northwind Traders", "NWT"), ("Tailwind Logistics", "TWL"), ("Fabrikam Rail Cargo", "FRC"),
-    ("Litware Cloud Services", "LCS"), ("Proseware Facilities", "PWF"), ("Humongous Haulage", "HH"),
-    ("Margie Travel LLP", "MT"), ("Graphic Design Institute", "GDI"), ("Blue Yonder Telecom", "BYT"),
-    ("Alpine Security LLP", "ASL"), ("Contoso Leasing", "CL"), ("Lucerne Property LLP", "LP"))
+    ("Tailspin Hosting LLP", "TSH", ("hosting",)), ("Litware Cloud Services", "LCS", ("hosting",)),
+    ("Blue Yonder Telecom", "BYT", ("telecom",)), ("Alpine Security LLP", "ASL", ("security",)),
+    ("Contoso Leasing", "CL", ("leasing",)), ("Lucerne Property LLP", "LP", ("rent",)),
+    ("Proseware Facilities", "PWF", ("rent", "security")),
+    ("Northwind Freight GmbH", "NWF", ("freight",)), ("Wide World Importers", "WWI", ("freight", "warehouse")),
+    ("Consolidated Messenger LLP", "CM", ("freight", "office")), ("Coho Storage LLP", "CHS", ("warehouse",)),
+    ("Woodgrove Office Supply", "WOS", ("office",)), ("Northwind Traders", "NWT", ("freight", "warehouse")),
+    ("Tailwind Logistics", "TWL", ("freight",)), ("Fabrikam Rail Cargo", "FRC", ("freight",)),
+    ("Humongous Haulage", "HH", ("freight",)), ("Margie Travel LLP", "MT", ("office",)),
+    ("Graphic Design Institute", "GDI", ("office",)))
+MONTHLY_NAMES = tuple(v for v in VENDOR_NAMES if VENDOR_KINDS[v[2][0]][2])
+ONE_OFF_NAMES = tuple(v for v in VENDOR_NAMES if not VENDOR_KINDS[v[2][0]][2])
 UNKNOWN_PAYERS = ("ALPINE SKI HOUSE", "CITY POWER AND LIGHT", "SCHOOL OF FINE ART", "TREY RESEARCH FUND")
 UNKNOWN_TEXTS = ("OPLATA", "OPLATA PO DOGOVORU", "TRANSFER", "PREDOPLATA")
 COUNTERPARTY_OFFSETS = ("+00:00", "+01:00", "+02:00", "+03:00", "+05:00", "+06:00", "+08:00")
@@ -134,7 +142,7 @@ def norm_ref(text):
     return re.sub(r"[^A-Z0-9]", "", (text or "").upper())
 
 
-@functools.lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=4096)
 def ref_pattern(key):
     """A reference inside free text: the key's characters in order, any separators between them."""
     return re.compile(r"(?<![A-Z0-9])" + r"[^A-Z0-9]*".join(map(re.escape, key)) + r"(?![A-Z0-9])")
@@ -180,7 +188,10 @@ class Rates:
     def rate(self, currency, day):
         if currency == BASE:
             return "1"
-        return self.quotes[(self.rate_date(day), currency)]
+        key = (self.rate_date(day), currency)
+        if key not in self.quotes:
+            raise WorldError(f"no {currency} rate for {day}")
+        return self.quotes[key]
 
 
 # ---------------------------------------------------------------- records
@@ -657,8 +668,7 @@ def _add_invoice(rng, world, direction, cp, local_dt, numbers=None, fixed_total=
                       entered_time(rng, world, local_dt), terms, cp.currency, lines, expense_account=account)
         inv.vendor_ref = f"@{inv.key}@"
         if numbers is not None and rng.random() < 0.5:
-            numbers.po += rng.randint(1, 7)
-            inv.po_ref = f"PO-{numbers.po}"
+            inv.po_ref = "@PO@"                  # numbered by issue time in _number_documents
     inv.service_from = inv.service_to = local_dt.date().isoformat()
     if service:
         inv.service_from, inv.service_to = service
@@ -708,7 +718,7 @@ def _pay_customer(rng, world, inv, budget, behaviour=None):
         return []
     local = local_time(rng, world, day)
     cites = _ar_remittance(rng, [inv.number], cp)
-    fx_note = ", FX difference on each" if ccy != BASE else ""
+    fx_note = ", each clearing row at the invoice rate" if ccy != BASE else ""
     if behaviour in ("on_time", "late"):
         return [_add_payment(rng, world, "in", cp, local, ccy, total, cites, [(inv.key, total)])]
     if behaviour == "overpay":
@@ -728,6 +738,8 @@ def _pay_customer(rng, world, inv, budget, behaviour=None):
     made = [_add_payment(rng, world, "in", cp, local, ccy, first, text, [(inv.key, first)])]
     second_day = day + dt.timedelta(days=rng.randint(3, 15))
     if second_day > world.window_end or budget < 2:
+        _twin(world, "real_partial_payment", "payment_allocation", [inv.key, made[0].key],
+              "bank amount below the invoice, the whole payment allocated")
         return made
     second_local = local_time(rng, world, second_day)
     if behaviour == "split":
@@ -741,6 +753,21 @@ def _pay_customer(rng, world, inv, budget, behaviour=None):
               "the second payment is the full total although part was paid: allocated up to the open amount, "
               "the excess lies on 3510")
     return made
+
+
+def _repeated_full(rng, world, inv, cp):
+    """A partial payment, then the full total again a few days later, both inside the window."""
+    first_day = world.event_date(inv) + dt.timedelta(days=rng.randint(1, 7))
+    second_day = first_day + dt.timedelta(days=rng.randint(3, 10))
+    total, ccy = inv.total_minor, inv.currency
+    first = _part(rng, total, 30, 70, ccy)
+    made = [_add_payment(rng, world, "in", cp, local_time(rng, world, first_day), ccy, first,
+                         f"Partial payment {inv.number}", [(inv.key, first)]),
+            _add_payment(rng, world, "in", cp, local_time(rng, world, second_day), ccy, total,
+                         _ar_remittance(rng, [inv.number], cp), [(inv.key, total - first)])]
+    _twin(world, "repeated_full_payment", "payment_allocation", [inv.key, *(p.key for p in made)],
+          "the second payment is the full total although part was paid: allocated up to the open amount, "
+          "the excess lies on 3510")
 
 
 def _pay_vendor(rng, world, bills, budget):
@@ -789,7 +816,8 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     """
     anchors = anchors or {}
     low, high = config["documents"]
-    planned = 2 * anchors.get("full_receipts", 0) + anchors.get("vendor_bills", 0) + 2 * NEIGHBOUR_INVOICES
+    neighbours = NEIGHBOUR_INVOICES + anchors.get("period_moves", 0)
+    planned = 2 * anchors.get("full_receipts", 0) + anchors.get("vendor_bills", 0) + 2 * neighbours
     if high < planned + reserved_documents:
         raise ValueError(f"config: documents {low}-{high} cannot hold the requested errors, "
                          f"they need at least {planned + reserved_documents}")
@@ -815,11 +843,14 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         world.counterparties[cp.key] = cp
     # Monthly contracts: about subscription_pct of the vendor bills repeat one amount every month
     # (domain spec A world table, «Подписки»). A contract bills one or two times in the window.
-    contracts = max(1, round(subscription_pct * AP_SHARE_OF_DOCUMENTS * target / 100 / BILLS_PER_CONTRACT))
-    monthly = min(contracts, rng.randint(2, 5))
-    names = rng.sample(VENDOR_NAMES, monthly + rng.randint(4, 7))
-    kinds = rng.sample(MONTHLY_KINDS, monthly) + [rng.choice(ONE_OFF_KINDS) for _ in names[monthly:]]
-    for (name, prefix), kind in zip(names, kinds):
+    # Customer receipts the errors need are not vendor bills, so they do not count for the share.
+    trade = target - 2 * anchors.get("full_receipts", 0)
+    contracts = max(1, round(subscription_pct * AP_SHARE_OF_DOCUMENTS * trade / 100 / BILLS_PER_CONTRACT))
+    monthly = min(len(MONTHLY_NAMES), max(2, -(-contracts // MAX_CONTRACTS_PER_VENDOR), rng.randint(2, 4)))
+    contracts = min(contracts, monthly * MAX_CONTRACTS_PER_VENDOR)
+    names = rng.sample(MONTHLY_NAMES, monthly) + rng.sample(ONE_OFF_NAMES, rng.randint(4, 7))
+    for name, prefix, fits in names:
+        kind = rng.choice(fits)
         cp = Counterparty(world.new_key("C"), name, "vendor", rng.choice(COUNTERPARTY_OFFSETS), currency(), kind,
                           prefix, rng.choice(sorted(REF_STYLES)), rng.randint(10, 900))
         world.counterparties[cp.key] = cp
@@ -874,15 +905,23 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     for _ in range(anchors.get("vendor_bills", 0)):
         new_ap(rng.choice(one_off), window_day())
     for first, last in ((window_start, period_start - dt.timedelta(days=1)), (period_end + dt.timedelta(days=1), window_end)):
-        for _ in range(NEIGHBOUR_INVOICES):
+        for _ in range(neighbours):
             day = window_day(first, last)
             if rng.random() < 0.55:
                 new_ar(rng.choice(customers), day)
             else:
                 new_ap(rng.choice(one_off), day)
 
-    # Ordinary trade until the document count is reached; a payment that would overshoot is left out.
     unknown = rng.randint(0, 2)
+    # A full-total payment after a partial one: legitimately part on 3510 although the amount equals the
+    # invoice total. Planted in every book with room, so that rule alone does not single out an error.
+    for _ in range(rng.randint(*REPEATED_FULL_TWINS)):
+        if room() - unknown >= 3:
+            cp = rng.choice(customers)
+            inv = new_ar(cp, window_day(last=window_end - dt.timedelta(days=20)))
+            _repeated_full(rng, world, inv, cp)
+
+    # Ordinary trade until the document count is reached; a payment that would overshoot is left out.
     while room() > unknown:
         roll = rng.random()
         if roll < COMBINED_AR_SHARE and room() - unknown >= 3:
@@ -911,16 +950,16 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
                            rng.choice(UNKNOWN_TEXTS), [], raw_name=rng.choice(UNKNOWN_PAYERS))
         _twin(world, "unidentified_receipt", "payment_allocation", [pay.key],
               "no reference in the remittance, amount matches no open item")
-    _number_documents(rng, world, numbers.ar)
+    _number_documents(rng, world, numbers.ar, numbers.po)
     return world
 
 
-def _number_documents(rng, world, first_ar):
+def _number_documents(rng, world, first_ar, first_po):
     """Number documents by issue time, as an ERP and every vendor do, and replace the placeholders.
 
     Customer invoices get S-<year>-<n>. A vendor numbers its bills in its own format; our clerk keys the
     reference as printed, or in about CLERK_RETYPE_SHARE of bills with other separators. Remittance
-    texts cite the printed reference.
+    texts cite the printed reference. Our purchase orders also grow with the bill date.
     """
     final = {}
     ar = sorted((i for i in world.invoices.values() if i.direction == "AR"), key=lambda i: (i.issued_at, i.key))
@@ -938,6 +977,10 @@ def _number_documents(rng, world, first_ar):
             inv.vendor_ref = printed
             if rng.random() < CLERK_RETYPE_SHARE:
                 inv.vendor_ref = rng.choice([v for v in ref_variants(inv.ref_parts, cp.style) if v != printed])
+    po = first_po
+    for inv in sorted((i for i in world.invoices.values() if i.po_ref), key=lambda i: (i.issued_at, i.key)):
+        po += rng.randint(1, 7)
+        inv.po_ref = f"PO-{po}"
     for pay in world.payments.values():
         for placeholder in re.findall(r"@I\d+@", pay.remittance):
             pay.remittance = pay.remittance.replace(placeholder, final[placeholder])

@@ -155,6 +155,20 @@ class Realism(unittest.TestCase):
             with self.subTest(out=out.name):
                 self.assertTrue(multi)
 
+    def test_amount_equal_to_the_cited_total_with_3510_is_not_only_an_error(self):
+        """A clean full-total payment after a partial one also leaves part on 3510 (review finding 18)."""
+        clean_hits = 0
+        for out in self.episodes:
+            truth = json.loads((out / "private" / "truth.json").read_text(encoding="utf-8"))
+            errors = {x.split("/")[1] for i in truth["issues"] for x in i["affected_ids"] if x.startswith("payment/")}
+            totals = {i["invoice_id"]: i["total_minor"] for i in self.read(out, "invoices.jsonl")}
+            with open(out / "public" / "ledger.csv", encoding="utf-8") as f:
+                held = {r["payment_id"] for r in csv.DictReader(f) if r["account"] == "3510" and r["entity_id"]}
+            clean_hits += sum(1 for p in self.read(out, "payments.jsonl")
+                              if p["payment_id"] in held and p["payment_id"] not in errors and p["invoice_refs"]
+                              and len(p["invoice_refs"]) == 1 and p["amount_minor"] == totals[p["invoice_refs"][0]])
+        self.assertGreaterEqual(clean_hits, len(self.episodes))
+
     def test_conversions_round(self):
         from decimal import Decimal
         inexact = 0
@@ -176,6 +190,18 @@ class Capacity(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     generate_episode(seed, {"documents": [20, 30], "errors": {"payment_allocation": 12}},
                                      str(Path(tmp) / f"bad{seed}"))
+
+    def test_an_id_never_spells_a_private_word(self):
+        from auditenv.generate import IdSource
+
+        class Scripted:
+            def __init__(self, text):
+                self.chars = iter(text)
+
+            def choice(self, _):
+                return next(self.chars)
+
+        self.assertEqual(IdSource(Scripted("FXRATE" + "7Q4M2K")).new(), "7Q4M2K")
 
     def test_minus_zero_offset_is_written_as_utc(self):
         with tempfile.TemporaryDirectory() as tmp:
