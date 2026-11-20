@@ -26,6 +26,7 @@ class Injection:
     issues: list
     docs: set                     # documents whose records this injection changed or created
     scenario: str = None
+    causes: list = None           # [(root cause, [index of an issue it gives])], one per cause of a scenario
 
 
 @dataclass
@@ -89,8 +90,11 @@ def inject_errors(rng, world, config):
     for name, (injector, _, _) in SCENARIOS.items():
         others = {key for key, owner in world.anchors.items() if owner != name}
         for _ in range(config["scenarios"][name]):
-            variant, cause, issues, docs = injector(rng, world, used | others)
+            variant, causes, issues, docs = injector(rng, world, used | others)
             used.update(docs)
-            injections.append(Injection(variant, cause, [Issue(t, tuple(sorted(a)), name) for t, a in issues],
-                                        set(docs), name))
+            if isinstance(causes, str):
+                causes = [(causes, list(range(len(issues))))]
+            injections.append(Injection(variant, "; ".join(text for text, _ in causes),
+                                        [Issue(t, tuple(sorted(a)), name) for t, a in issues], set(docs), name,
+                                        causes))
     return injections

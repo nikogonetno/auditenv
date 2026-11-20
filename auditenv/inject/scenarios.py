@@ -52,11 +52,13 @@ def c1(rng, world, used):
     rest = _rest(rng, world, pay, inv_key, amount)
     pay.alloc = [(inv_key, amount - rest)]
     carrier = f"{pay.key}:carrier"
-    cause = (f"bank UTC date {utc_day} used as the posting date instead of the company date "
-             f"{world.event_date(pay)}, the system took that date's rate; allocation keyed as {amount - rest} "
-             f"instead of {amount}")
+    # Two causes (domain spec A, C1): the first gives two errors, the second the third. Each cause names
+    # the indexes of the issues it gives.
+    causes = [(f"bank UTC date {utc_day} used as the posting date instead of the company date "
+               f"{world.event_date(pay)}, the system took that date's rate", [0, 1]),
+              (f"allocation keyed as {amount - rest} instead of {amount}, the rest left on 3510", [2])]
     issues = [("period_cutoff", (carrier,)), ("fx_rate", (carrier,)), ("payment_allocation", (pay.key, inv_key))]
-    return "utc_date_as_posting_date+partial_allocation", cause, issues, {pay.key, inv_key}
+    return "utc_date_as_posting_date+partial_allocation", causes, issues, {pay.key, inv_key}
 
 
 def c2(rng, world, used):
@@ -68,5 +70,9 @@ def c2(rng, world, used):
     (pay,) = [p for p in world.payments.values() if world.anchors.get(p.key) == "C2" and p.alloc[0][0] == bill.key]
     copy = make_copy(rng, world, bill, keyed_before=pay.entered_at)
     pay.alloc = [(copy.key, pay.alloc[0][1])]
+    # The trap of C2: the original looks unpaid after a payment that names it. Always listed.
+    world.twins.append({"kind": "c2_trap", "mimics": "payment_allocation", "records": [bill.key, pay.key],
+                        "feature": "the payment names both records and is allocated in full to the copy; "
+                                   "the only error is the duplicate", "always": True})
     cause = "vendor bill keyed twice; the payment, whose reference names both records, was allocated to the copy"
     return "duplicate_then_paid", cause, [("duplicate_invoice", (bill.key, copy.key))], {bill.key, copy.key, pay.key}

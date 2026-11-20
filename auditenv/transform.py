@@ -74,6 +74,19 @@ def _old_ids(manifest, ledger, invoices, payments, fx, truth):
     return ids
 
 
+def _provenance_ids(value):
+    """Ids that only provenance names, such as a row an injection removed: every '<prefix>/<id>' string."""
+    if isinstance(value, dict):
+        return set().union(*(_provenance_ids(v) for v in value.values())) if value else set()
+    if isinstance(value, list):
+        return set().union(*(_provenance_ids(v) for v in value)) if value else set()
+    if isinstance(value, str):
+        prefix, sep, rest = value.partition("/")
+        if sep and prefix in PREFIXES and rest:
+            return {rest}
+    return set()
+
+
 def _map_refs(value, id_map):
     """Every id inside a JSON value, bare or as '<prefix>/<id>', replaced by its new id."""
     if isinstance(value, dict):
@@ -103,6 +116,8 @@ def permute_and_rename(episode_dir, out_dir, salt):
 
     rng = _rng(salt)
     old = _old_ids(manifest, ledger, invoices, payments, fx, truth)
+    if provenance is not None:
+        old |= _provenance_ids(provenance)
     source = IdSource(rng)
     source.taken.update(old)                      # a new id never equals an old one
     id_map = {}

@@ -46,6 +46,7 @@ CENTS_SHARE_FOREIGN, CENTS_SHARE_BASE = 0.5, 0.2
 # with probability OFF_DAY_KEEP while the quota lasts, otherwise redrawn (documents) or moved to the next
 # business day (bank value dates, monthly bills). The planted foreign weekend look-alike uses the quota too.
 OFF_DAY_PERMILLE = (25, 55)
+OFF_DAY_FLOOR, OFF_DAY_CEIL = 20, 60     # per mille of the book's documents, enforced at the end of the build
 OFF_DAY_KEEP = 0.25
 _DECIMAL = Context(prec=34, rounding=ROUND_HALF_UP, Emin=-999999, Emax=999999, capitals=1, clamp=0, flags=[],
                    traps=[InvalidOperation, DivisionByZero, Overflow])
@@ -359,6 +360,12 @@ class Book:
         return [r for r in self.by_doc[doc_key] if r.key.split(":", 1)[1].startswith(role_prefix)]
 
 
+def is_refund(world, pay):
+    """An outgoing payment to a customer that allocates nothing: a refund out of its 3510 balance."""
+    return (pay.direction == "out" and not pay.alloc and pay.cp is not None
+            and world.counterparties[pay.cp].role == "customer")
+
+
 def payment_order(world):
     return sorted(world.payments.values(), key=lambda p: (p.timestamp, p.key))
 
@@ -400,7 +407,9 @@ def post(world):
             add(pay.key, "carrier", day, pay.entered_at, BANK, bank, 0, *common, pay.currency, pay.amount_minor, rate,
                 pay.remittance)
         cleared = 0
-        for inv_key, amount in pay.alloc:
+        # A clearing row is keyed by its place in the allocation, not by the invoice it clears, so an
+        # allocation moved to another invoice (C2) is one row whose invoice_id changes in provenance.
+        for n, (inv_key, amount) in enumerate(pay.alloc):
             if amount == open_doc[inv_key]:
                 base = open_base[inv_key]          # the last allocation clears the base residual
             else:
@@ -409,7 +418,7 @@ def post(world):
             open_base[inv_key] -= base
             cleared += base
             debit, credit = (0, base) if pay.direction == "in" else (base, 0)
-            add(pay.key, f"clear:{inv_key}", day, pay.entered_at, RECEIVABLE if pay.direction == "in" else PAYABLE,
+            add(pay.key, f"clear:{n}", day, pay.entered_at, RECEIVABLE if pay.direction == "in" else PAYABLE,
                 debit, credit, pay.cp, inv_key, pay.key, pay.currency, amount, invoice_rate[inv_key], None)
         rest = pay.amount_minor - sum(a for _, a in pay.alloc)
         if pay.direction == "in":
@@ -418,6 +427,13 @@ def post(world):
                 add(pay.key, "unapplied", day, pay.entered_at, UNAPPLIED, 0, held, *common, pay.currency, rest, rate,
                     "unapplied receipt")
             diff = bank - cleared - held
+        elif is_refund(world, pay):
+            # Refund to a customer (PM 21.11 02.15, case §02): Dt 3510 Ct 1030 for the whole amount, base only.
+            add(pay.key, "refund", day, pay.entered_at, UNAPPLIED, bank, 0, *common, pay.currency, pay.amount_minor,
+                rate, "refund of overpayment")
+            add(pay.key, "carrier", day, pay.entered_at, BANK, 0, bank, *common, pay.currency, pay.amount_minor, rate,
+                pay.remittance)
+            diff = 0
         else:
             add(pay.key, "carrier", day, pay.entered_at, BANK, 0, bank, *common, pay.currency, pay.amount_minor, rate,
                 pay.remittance)
@@ -555,11 +571,22 @@ def check_book(world, book, expected_violations, moved_docs=()):
                 fail("INV-12", f"{pay.key} paid before {inv_key} was issued")
             per_invoice[inv_key] = per_invoice.get(inv_key, 0) + amount
             allocated += amount
+        if is_refund(world, pay):
+            continue                         # checked in bank order below
         if allocated > pay.amount_minor or (pay.direction == "out" and allocated != pay.amount_minor):
             fail("INV-10", f"{pay.key}: allocated {allocated} of {pay.amount_minor}")
         held = sum(r.doc_amount_minor for r in book.rows_of(pay.key, "unapplied"))
         if pay.direction == "in" and allocated + held != pay.amount_minor:
             fail("INV-10", f"{pay.key}: allocated {allocated} + held {held} != {pay.amount_minor}")
+    unapplied = {}                           # customer -> base 3510 balance from the payments so far
+    for pay in payment_order(world):
+        if is_refund(world, pay):
+            if pay.currency != BASE or world.invoice_refs(pay) or pay.amount_minor > unapplied.get(pay.cp, 0):
+                fail("INV-10", f"{pay.key}: refund {pay.amount_minor} {pay.currency}, "
+                               f"3510 holds {unapplied.get(pay.cp, 0)}")
+        for row in book.by_doc[pay.key]:
+            if row.account == UNAPPLIED and row.doc_currency == BASE:
+                unapplied[pay.cp] = unapplied.get(pay.cp, 0) + row.credit_minor - row.debit_minor
     for inv_key, amount in per_invoice.items():
         if amount > world.invoices[inv_key].total_minor:
             fail("INV-09", f"{inv_key}: allocated {amount} above the total")
@@ -670,12 +697,40 @@ def _c1_receipt(rng, world, customers, foreign_customers):
     return inv, pay
 
 
+def _spend_off_day(world, day):
+    """A planted document that must sit on its day uses the book's off-day quota when that day is off."""
+    if not world.rates.is_business(day):
+        world.off_days_left = max(world.off_days_left - 1, 0)
+
+
+def _overpayment_and_refund(rng, world, cp, day, numbers):
+    """Look-alike for payment_allocation (PM 21.11 02.15, refunds to customers, case §02): a base-currency
+    invoice overpaid, the excess on 3510, and later a refund of the excess or part of it, Dt 3510 Ct 1030,
+    with a remittance that names no invoice."""
+    inv = _add_invoice(rng, world, "AR", cp, local_time(rng, world, day), numbers)
+    paid = bank_day(rng, world, day + dt.timedelta(days=rng.randint(1, 5)))
+    extra = _part(rng, inv.total_minor, 5, 30, BASE)
+    receipt = _add_payment(rng, world, "in", cp, local_time(rng, world, paid), BASE, inv.total_minor + extra,
+                           _ar_remittance(rng, [inv.number], cp), [(inv.key, inv.total_minor)])
+    back = bank_day(rng, world, paid + dt.timedelta(days=rng.randint(2, 6)))
+    if back > world.window_end:
+        back = paid + dt.timedelta(days=1)
+    amount = extra if rng.random() < 0.7 else _part(rng, extra, 40, 90, BASE)
+    refund = _add_payment(rng, world, "out", cp, local_time(rng, world, back), BASE, amount,
+                          rng.choice(("Refund of overpayment", f"Vozvrat pereplaty {cp.name.upper()}",
+                                      "Return of advance")), [])
+    _twin(world, "overpayment_and_refund", "payment_allocation", [inv.key, receipt.key, refund.key],
+          "payment above the invoice, the excess on 3510, later refunded out of 3510 with no invoice named")
+
+
 def _midnight_lookalike(rng, world, customers, one_off, numbers):
     """Midnight look-alike of the period error (docs/tasks/B_night_stage3.md item 5): a document within half an
     hour of the midnight that ends the period, whose UTC date (or the vendor's own date) is in the other
     period, posted correctly on the company-local date."""
     if world.offset != "+00:00":
-        inv = _add_invoice(rng, world, "AR", rng.choice(customers), boundary_moment(rng, world), numbers)
+        moment = boundary_moment(rng, world)
+        _spend_off_day(world, moment.date())
+        inv = _add_invoice(rng, world, "AR", rng.choice(customers), moment, numbers)
     else:
         east = [c for c in one_off if int(c.offset[1:3]) > 0 and c.offset[0] == "+"]
         if not east:
@@ -1087,8 +1142,12 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         inv, pay = _c1_receipt(rng, world, customers, foreign_customers)
         world.anchors.update({inv.key: "C1", pay.key: "C1"})
     for _ in range(anchors.get("c2_bills", 0)):
-        bill = new_ap(rng.choice(one_off), window_day(last=window_end - dt.timedelta(days=12)))
-        day = bank_day(rng, world, world.event_date(bill) + dt.timedelta(days=rng.randint(3, 10)))
+        # Paid on its terms like a clean vendor bill (due -5..+10 days), so the timing does not tell.
+        bill = new_ap(rng.choice(one_off), window_day(last=window_end - dt.timedelta(days=26)))
+        bill.terms = 14
+        due = world.event_date(bill) + dt.timedelta(days=bill.terms)
+        day = due + dt.timedelta(days=rng.choice((-rng.randint(0, 5), rng.randint(1, 10))))
+        day = bank_day(rng, world, max(day, world.event_date(bill) + dt.timedelta(days=1)))
         pay = _add_payment(rng, world, "out", world.counterparties[bill.cp], local_time(rng, world, day), bill.currency,
                            bill.total_minor, f"Payment for invoice {bill.vendor_ref}", [(bill.key, bill.total_minor)])
         world.anchors.update({bill.key: "C2", pay.key: "C2"})
@@ -1107,7 +1166,8 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     # next month is posted on its own date.
     days = [period_start + dt.timedelta(days=n) for n in range((period_end - period_start).days + 1)]
     off_days = [d for d in days if not rates.is_business(d)]
-    foreign_parties = foreign_customers or [c for c in one_off if c.currency != BASE]
+    foreign_parties = (foreign_customers or [c for c in one_off if c.currency != BASE]
+                       or [c for c in monthly_vendors if c.currency != BASE])
     if foreign_parties and off_days:
         cp, day = rng.choice(foreign_parties), rng.choice(off_days)
         inv = new_ar(cp, day) if cp.role == "customer" else new_ap(cp, day)
@@ -1134,6 +1194,21 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
             cp = rng.choice(customers)
             inv = new_ar(cp, window_day(last=window_end - dt.timedelta(days=20)))
             _repeated_full(rng, world, inv, cp)
+    if config["twins"][1] and world.offset != "+00:00" and room() - unknown >= 2:
+        # A correct receipt at the period-end midnight, so that time alone does not single out C1.
+        payers = [c for c in foreign_customers if c in customers] or customers
+        cp = rng.choice(payers)
+        inv = new_ar(cp, window_day(max(window_start, period_start), period_end - dt.timedelta(days=3)))
+        moment = boundary_moment(rng, world)
+        _spend_off_day(world, moment.date())
+        pay = _add_payment(rng, world, "in", cp, moment, cp.currency, inv.total_minor,
+                           _ar_remittance(rng, [inv.number], cp), [(inv.key, inv.total_minor)])
+        _twin(world, "midnight_utc", "period_cutoff", [pay.key],
+              "a receipt whose UTC date is in another period than the company-local date it is posted on")
+    base_customers = [c for c in customers if c.currency == BASE]
+    if config["twins"][1] and base_customers and room() - unknown >= 3:
+        _overpayment_and_refund(rng, world, rng.choice(base_customers),
+                                window_day(last=window_end - dt.timedelta(days=12)), numbers)
 
     # Ordinary trade until the document count is reached; a payment that would overshoot is left out.
     while room() > unknown:
@@ -1165,6 +1240,7 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         _twin(world, "unidentified_receipt", "payment_allocation", [pay.key],
               "no reference in the remittance, amount matches no open item")
     _first_in_sequence(world)
+    _off_day_share(world, target + reserved_documents)
     # An ERP allocates a payment to an invoice only once the invoice is keyed.
     for pay in world.payments.values():
         keyed = [world.invoices[k].entered_at for k, _ in pay.alloc]
@@ -1172,6 +1248,43 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
             pay.entered_at = max(keyed) + dt.timedelta(minutes=rng.randint(10, 240))
     _number_documents(rng, world, numbers.ar, numbers.po)
     return world
+
+
+def _off_day_share(world, documents):
+    """Keep weekend and holiday documents between OFF_DAY_FLOOR and OFF_DAY_CEIL of the book (PM 21.11 03.15):
+    the quota caps the share, and free invoices move to an off day one to three days earlier, or to a business
+    day, until it holds. Free means unpaid, no anchor, no twin, not billed monthly; moving earlier keeps the
+    entry after the document, and the period of the document does not change."""
+    twin_records = {k for t in world.twins for k in t["records"]}
+    paid = {k for p in world.payments.values() for k, _ in p.alloc}
+
+    def free(inv):
+        return (inv.key not in paid and inv.key not in world.anchors and inv.key not in twin_records
+                and inv.service_from == inv.service_to)
+
+    def side(day):
+        return (day < world.period_start) - (day > world.period_end)
+
+    def off(day):
+        return not world.rates.is_business(day)
+
+    def count():
+        return sum(off(world.event_date(d)) for d in [*world.invoices.values(), *world.payments.values()])
+
+    floor, ceil = -(-documents * OFF_DAY_FLOOR // 1000), documents * OFF_DAY_CEIL // 1000
+    for want_off, too_few in ((True, lambda: count() < floor), (False, lambda: count() > ceil)):
+        for inv in sorted(world.invoices.values(), key=lambda i: i.key):
+            if not too_few():
+                break
+            day = world.event_date(inv)
+            if not free(inv) or off(day) == want_off:
+                continue
+            for back in (1, 2, 3):
+                new = day - dt.timedelta(days=back)
+                if off(new) == want_off and side(new) == side(day) and new >= world.window_start:
+                    inv.issued_at -= dt.timedelta(days=back)
+                    inv.service_from = inv.service_to = new.isoformat()
+                    break
 
 
 def _first_in_sequence(world):

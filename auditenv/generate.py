@@ -366,11 +366,12 @@ def _twins(rng, config, final, ids, targets):
             found.setdefault(("late_entry", (doc.key,)), {
                 "kind": "late_entry", "mimics": "period_cutoff", "records": [doc.key],
                 "feature": "entered after the period, posted on the document date"})
+    always = [found.pop(key) for key in sorted(found) if found[key].get("always")]
     by_kind = {}
     for key in sorted(found):
         by_kind.setdefault(key[0], []).append(found[key])
     order = [k for k in TWIN_PRIORITY if k in by_kind] + sorted(k for k in by_kind if k not in TWIN_PRIORITY)
-    wanted, chosen = rng.randint(*config["twins"]), []
+    wanted, chosen = rng.randint(*config["twins"]), list(always)
     while len(chosen) < wanted and any(by_kind[k] for k in order):
         for kind in order:
             if by_kind[kind] and len(chosen) < wanted:
@@ -381,6 +382,15 @@ def _twins(rng, config, final, ids, targets):
                     "records": sorted(ids.ref(k) for k in twin["records"]),
                     "distinguishing_feature": twin["feature"]})
     return out, {kind: len(rest) for kind, rest in sorted(by_kind.items()) if rest}
+
+
+def _injection_record(n, inj, issue_ids, changes):
+    record = {"order": n, "injection_id": f"INJ-{n:02d}", "scenario_id": inj.scenario, "variant": inj.variant,
+              "root_cause": inj.cause, "issue_ids": sorted(issue_ids), "changes": changes}
+    if inj.causes and len(inj.causes) > 1:
+        record["root_causes"] = [{"cause": text, "issue_ids": sorted(issue_ids[k] for k in indexes)}
+                                 for text, indexes in inj.causes]
+    return record
 
 
 # ---------------------------------------------------------------- output
@@ -429,9 +439,7 @@ def _render(rng, seed, config, world, clean_book, final, book, injections):
         "config_sha256": config_sha256(config),
         "world": {"period": final.period, "timezone": final.offset, "industry": final.industry,
                   "foreign_pct": final.foreign_pct, "documents": len(tables["invoices"]) + len(tables["payments"])},
-        "injections": [{"order": n, "injection_id": f"INJ-{n:02d}", "scenario_id": inj.scenario,
-                        "variant": inj.variant, "root_cause": inj.cause, "issue_ids": sorted(issue_ids[n - 1]),
-                        "changes": changes[n - 1]} for n, inj in enumerate(injections, 1)],
+        "injections": [_injection_record(n, inj, issue_ids[n - 1], changes[n - 1]) for n, inj in enumerate(injections, 1)],
         "twins": twins,
         "other_lookalikes": lookalikes,
     }

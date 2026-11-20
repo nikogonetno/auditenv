@@ -148,18 +148,53 @@ class MidnightLookalike(unittest.TestCase):
                 twins = [t for t in provenance["twins"] if t["kind"] == "midnight_utc"]
                 with self.subTest(offsets=offsets):
                     self.assertTrue(twins)
-                    doc = invoices[twins[0]["records"][0].split("/")[1]]
+                    _, payments, _, _, _, _ = read(out)
+                    table, _, rid = twins[0]["records"][0].partition("/")
+                    doc = invoices.get(rid) or payments[rid]
                     tz = dt.datetime.fromisoformat("2026-01-01T00:00:00" + policy["company_utc_offset"]).tzinfo
                     start = dt.date.fromisoformat(policy["period"]["start_local"])
                     end = dt.date.fromisoformat(policy["period"]["end_local"])
-                    when = dt.datetime.fromisoformat(doc["issued_at"])
+                    when = dt.datetime.fromisoformat(doc.get("issued_at") or doc["timestamp"])
                     local = when.astimezone(tz).date()
                     others = (when.date(), when.astimezone(dt.timezone.utc).date())
                     self.assertTrue(any((start <= d <= end) != (start <= local <= end) for d in others))
-                    (row,) = [r for r in ledger.values() if r["invoice_id"] == doc["invoice_id"] and not r["payment_id"]
-                              and r["account"] in ("1210", "3310")]
+                    if table == "invoice":
+                        (row,) = [r for r in ledger.values() if r["invoice_id"] == rid and not r["payment_id"]
+                                  and r["account"] in ("1210", "3310")]
+                    else:
+                        (row,) = [r for r in ledger.values() if r["payment_id"] == rid and r["account"] == "1030"]
                     self.assertEqual(row["timestamp"][:10], local.isoformat())
                     self.assertEqual(verify_episode(str(out)), [])
+
+
+class Refunds(unittest.TestCase):
+    """Look-alike «overpayment and refund» (PM 21.11 02.15, case §02; docs/tasks/B_night_stage3.md item 9)."""
+
+    def test_refund_is_dr_3510_cr_1030_out_of_an_earlier_overpayment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            seen = 0
+            for seed in range(4):
+                out = Path(tmp) / str(seed)
+                generate_episode(40 + seed, {"foreign_pct": [0, 30]}, str(out))
+                invoices, payments, ledger, _, _, truth = read(out)
+                customers = {i["entity_id"] for i in invoices.values() if i["direction"] == "AR"}
+                order = sorted(payments.values(), key=lambda p: (p["timestamp"], p["payment_id"]))
+                held = {}
+                for pay in order:
+                    rows = [r for r in ledger.values() if r["payment_id"] == pay["payment_id"]]
+                    if pay["direction"] == "out" and pay["entity_id"] in customers:
+                        seen += 1
+                        self.assertIsNone(pay["invoice_refs"])
+                        self.assertEqual(pay["currency"], "KZT")
+                        self.assertEqual(sorted((r["account"], int(r["debit_minor"]), int(r["credit_minor"])) for r in rows),
+                                         [("1030", 0, pay["amount_minor"]), ("3510", pay["amount_minor"], 0)])
+                        self.assertLessEqual(pay["amount_minor"], held.get(pay["entity_id"], 0))
+                    for r in rows:
+                        if r["account"] == "3510" and r["doc_currency"] == "KZT":
+                            held[pay["entity_id"]] = held.get(pay["entity_id"], 0) + int(r["credit_minor"]) - int(r["debit_minor"])
+                self.assertEqual(verify_episode(str(out)), [])
+                self.assertEqual(oracle(out), 1.0)
+            self.assertGreaterEqual(seen, 3)
 
 
 if __name__ == "__main__":
