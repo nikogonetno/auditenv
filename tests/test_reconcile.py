@@ -208,15 +208,26 @@ class Rules(unittest.TestCase):
             "type": "fx_rate", "affected_ids": ["ledger/R1"], "claimed_amount_minor": 1, "currency": "KZT",
             "evidence_ids": ["invoice/INV1", "ledger/R1", "fx/FX1"], "explanation": found[0]["explanation"]}])
 
-    def test_rate_takes_no_fallback_for_a_day_without_a_quote(self):
-        """A Saturday invoice has no fx row on its date: the naive rule skips it rather than look back."""
-        found = reconcile(manifest(), tables(
+    def saturday(self, *quotes):
+        """A Saturday 26 September USD bill booked at Friday's rate, with the given (date, rate, fx_id) quotes."""
+        return reconcile(manifest(), tables(
             invoices=[invoice("INV1", issued_at="2026-09-26T09:00:00+05:00", currency="USD", total=100)],
             ledger=[row("R1", "3310", 51264, invoice_id="INV1", timestamp="2026-09-26T12:00:00+05:00",
                         doc_currency="USD", doc_amount=100, rate="512.64")],
-            fx=[{"date": "2026-09-25", "source_currency": "USD", "target_currency": "KZT", "rate": "512.64",
-                 "fx_id": "FX1"}]))
-        self.assertEqual(found, [])
+            fx=[{"date": d, "source_currency": "USD", "target_currency": "KZT", "rate": r, "fx_id": i}
+                for d, r, i in quotes]))
+
+    def test_rate_takes_the_next_quote_for_a_day_without_one(self):
+        """The naive rule reads «the rate of the document date» and, on a Saturday, takes Monday's quote, not
+        Friday's as the policy asks: the weekend look-alike fools it (docs/tasks/B_stage2.md item 4)."""
+        found = self.saturday(("2026-09-25", "512.64", "FRI"), ("2026-09-28", "515.00", "MON"))
+        self.assertEqual([(f["type"], f["claimed_amount_minor"], f["evidence_ids"]) for f in found],
+                         [("fx_rate", 236, ["invoice/INV1", "ledger/R1", "fx/MON"])])
+
+    def test_rate_looks_at_most_a_week_ahead(self):
+        self.assertEqual(self.saturday(("2026-09-25", "512.64", "FRI"), ("2026-10-04", "515.00", "LATE")), [])
+        self.assertEqual(self.saturday(("2026-09-25", "512.64", "FRI")), [])
+        self.assertEqual(len(self.saturday(("2026-10-03", "515.00", "WEEK"))), 1)
 
     def test_period_uses_the_utc_date_of_the_document(self):
         """00:20 +05:00 on 1 October is 30 September in UTC: posted on 1 October, it is flagged."""

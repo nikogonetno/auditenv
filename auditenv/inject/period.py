@@ -7,7 +7,8 @@ entered_at stay as they were.
 The numbering must not give the move away. A document is a target only when every document that comes
 before it after the period end, in its numbering sequence, is posted in the period too. That sequence is
 the customer invoice numbers for an AR invoice, and for an AP bill both the vendor's references and our
-purchase orders. When no document qualifies, any base-currency document of those days is taken.
+purchase orders. The period anchors of auditenv/world.py come first in their vendor's sequence, so a
+target always exists; a document out of order is never moved.
 """
 import datetime as dt
 
@@ -33,9 +34,10 @@ def inject(rng, world, used):
 
     pool = [i for i in after if i.currency == BASE and i.key not in used
             and world.event_date(i) <= end + dt.timedelta(days=FIRST_DAYS)]
-    if not pool:
+    candidates = [i for i in pool if in_order(i)]
+    if not candidates:
         raise ValueError("config: no base-currency invoice of the next month's first days left for period_cutoff")
-    inv = rng.choice([i for i in pool if in_order(i)] or pool)
+    inv = rng.choice(candidates)
     inv.post_date = end
     cause = f"document of {world.event_date(inv)} posted on the last day of the period {end}"
     return VARIANT, cause, [(f"{inv.key}:carrier",)], {inv.key}

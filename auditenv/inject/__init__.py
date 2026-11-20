@@ -73,8 +73,10 @@ def inject_errors(rng, world, config):
     injections = []
     for kind in ISSUE_TYPES:
         module = INJECTORS.get(kind, (None,))[0]
+        # Anchors built for another error type are off limits, so capacity never depends on the seed.
+        others = {key for key, owner in world.anchors.items() if owner != kind}
         for _ in range(config["errors"][kind]):
-            variant, cause, issues, docs = module.inject(rng, world, used)
+            variant, cause, issues, docs = module.inject(rng, world, used | others)
             used.update(docs)
             injections.append(Injection(variant, cause, [Issue(kind, tuple(sorted(a))) for a in issues], set(docs)))
     return injections
