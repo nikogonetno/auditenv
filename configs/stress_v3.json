@@ -1,0 +1,16 @@
+{
+  "comment": "Configs the stress test cycles through, seed by seed (docs/tasks/B_night_stage3.md item 7). Stage 3: the stage-2 set (default with one error of each type, rate only, period only, clean, 12 errors of all four types, the two stage-1 configs) plus C1, C2, C1 with C2 and other errors up to 12 in all, and C1 alone on a 20-document book. Supersedes stress_v2.",
+  "configs": [
+    {},
+    {"errors": {"fx_rate": 1}},
+    {"errors": {"period_cutoff": 1}},
+    {"errors": {}},
+    {"errors": {"duplicate_invoice": 3, "payment_allocation": 3, "fx_rate": 3, "period_cutoff": 3}},
+    {"errors": {"duplicate_invoice": 1, "payment_allocation": 1}},
+    {"errors": {"duplicate_invoice": 2, "payment_allocation": 1}},
+    {"errors": {}, "scenarios": {"C1": 1}},
+    {"errors": {}, "scenarios": {"C2": 1}},
+    {"errors": {"duplicate_invoice": 2, "payment_allocation": 2, "fx_rate": 2, "period_cutoff": 2}, "scenarios": {"C1": 1, "C2": 1}},
+    {"documents": [20, 20], "errors": {}, "scenarios": {"C1": 1}}
+  ]
+}
