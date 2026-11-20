@@ -1,0 +1,98 @@
+{
+  "clean": false,
+  "episode_id": "XR4PE3",
+  "issues": [
+    {
+      "affected_ids": [
+        "ledger/HGZGVC"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "ledger/HGZGVC",
+          "payment/DQ5EGS"
+        ]
+      ],
+      "expected_amount_minor": 422763000,
+      "issue_id": "0TZ50M",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    },
+    {
+      "affected_ids": [
+        "ledger/HGZGVC"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "fx/1FPH0F",
+          "ledger/HGZGVC",
+          "payment/DQ5EGS"
+        ]
+      ],
+      "expected_amount_minor": 1518000,
+      "issue_id": "3AB30A",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "fx_rate"
+    },
+    {
+      "affected_ids": [
+        "invoice/Z7G4CB",
+        "payment/DQ5EGS"
+      ],
+      "currency": "RUB",
+      "evidence_sets": [
+        [
+          "invoice/Z7G4CB",
+          "ledger/R5VXM2",
+          "ledger/RWRQR7",
+          "payment/DQ5EGS"
+        ]
+      ],
+      "expected_amount_minor": 37950000,
+      "issue_id": "6R1RX7",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "payment_allocation"
+    },
+    {
+      "affected_ids": [
+        "ledger/HH0FH1"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/M1G01E",
+          "ledger/HH0FH1"
+        ]
+      ],
+      "expected_amount_minor": 252000000,
+      "issue_id": "SS7ZV7",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    },
+    {
+      "affected_ids": [
+        "invoice/QSB240",
+        "invoice/XNCPC5"
+      ],
+      "currency": "USD",
+      "evidence_sets": [
+        [
+          "invoice/QSB240",
+          "invoice/XNCPC5",
+          "ledger/BZ8677",
+          "ledger/MGG899"
+        ]
+      ],
+      "expected_amount_minor": 1095540,
+      "issue_id": "T1HS66",
+      "scenario_id": "C2",
+      "tolerance_minor": 1,
+      "type": "duplicate_invoice"
+    }
+  ]
+}

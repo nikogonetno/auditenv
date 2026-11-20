@@ -1,0 +1,85 @@
+{
+  "config": {
+    "base_currency": "KZT",
+    "company_offsets": [
+      "+03:00",
+      "+04:00",
+      "+05:00",
+      "+06:00"
+    ],
+    "documents": [
+      150,
+      200
+    ],
+    "errors": {
+      "duplicate_invoice": 0,
+      "fx_rate": 0,
+      "payment_allocation": 0,
+      "period_cutoff": 0
+    },
+    "foreign_pct": [
+      0,
+      60
+    ],
+    "period": null,
+    "scenarios": {
+      "C1": 0,
+      "C2": 0
+    },
+    "twins": [
+      3,
+      8
+    ]
+  },
+  "config_sha256": "55c8e4e0e1373c9fe0f020d5ea9eba460ab747b870df8346756a2639cb9c07af",
+  "generator_version": "0.1.0",
+  "injections": [],
+  "other_lookalikes": {
+    "combined_payment": 5,
+    "late_entry": 4,
+    "monthly_subscription": 7,
+    "real_partial_payment": 1,
+    "repeated_full_payment": 1,
+    "split_payment": 1,
+    "unidentified_receipt": 1,
+    "weekend_document": 1
+  },
+  "schema_version": "1.0",
+  "seed": 2003,
+  "twins": [
+    {
+      "distinguishing_feature": "entered after the period, posted on the document date",
+      "kind": "late_entry",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/H33PZS"
+      ],
+      "twin_id": "TW-01"
+    },
+    {
+      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
+      "kind": "midnight_utc",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/FXGFZX"
+      ],
+      "twin_id": "TW-02"
+    },
+    {
+      "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
+      "kind": "weekend_document",
+      "mimics": "fx_rate",
+      "records": [
+        "invoice/8PE4T0"
+      ],
+      "twin_id": "TW-03"
+    }
+  ],
+  "world": {
+    "documents": 183,
+    "foreign_pct": 19,
+    "industry": "logistics",
+    "period": "2026-02",
+    "timezone": "+04:00"
+  }
+}

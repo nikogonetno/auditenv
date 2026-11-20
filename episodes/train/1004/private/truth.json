@@ -1,0 +1,64 @@
+{
+  "clean": false,
+  "episode_id": "9G9BRN",
+  "issues": [
+    {
+      "affected_ids": [
+        "invoice/6SAKV4",
+        "invoice/Z46QT6"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/6SAKV4",
+          "invoice/Z46QT6",
+          "ledger/3058RY",
+          "ledger/C5RMKX"
+        ]
+      ],
+      "expected_amount_minor": 582900000,
+      "issue_id": "0QXB5T",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "duplicate_invoice"
+    },
+    {
+      "affected_ids": [
+        "ledger/6MGVQ0"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "fx/F0AMVX",
+          "invoice/E76647",
+          "ledger/6MGVQ0"
+        ]
+      ],
+      "expected_amount_minor": 262599,
+      "issue_id": "54WD5P",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "fx_rate"
+    },
+    {
+      "affected_ids": [
+        "invoice/M42EVA",
+        "invoice/RRZ5ZY"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/M42EVA",
+          "invoice/RRZ5ZY",
+          "ledger/7DJRGQ",
+          "ledger/BRG3YC"
+        ]
+      ],
+      "expected_amount_minor": 362552255,
+      "issue_id": "96E3H1",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "duplicate_invoice"
+    }
+  ]
+}

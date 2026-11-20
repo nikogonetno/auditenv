@@ -1,0 +1,60 @@
+{
+  "clean": false,
+  "episode_id": "00F1QE",
+  "issues": [
+    {
+      "affected_ids": [
+        "ledger/GNN957"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/K89C0W",
+          "ledger/GNN957"
+        ]
+      ],
+      "expected_amount_minor": 122500000,
+      "issue_id": "5VYRX3",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    },
+    {
+      "affected_ids": [
+        "invoice/N277QM",
+        "payment/R5T1DV"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/N277QM",
+          "ledger/4MMTNH",
+          "ledger/YCTJK8",
+          "payment/R5T1DV"
+        ]
+      ],
+      "expected_amount_minor": 77478000,
+      "issue_id": "TNTC03",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "payment_allocation"
+    },
+    {
+      "affected_ids": [
+        "ledger/CNF0SZ"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/AMG399",
+          "ledger/CNF0SZ"
+        ]
+      ],
+      "expected_amount_minor": 62000000,
+      "issue_id": "VQW1T2",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    }
+  ]
+}

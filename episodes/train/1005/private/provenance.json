@@ -1,0 +1,87 @@
+{
+  "config": {
+    "base_currency": "KZT",
+    "company_offsets": [
+      "+03:00",
+      "+04:00",
+      "+05:00",
+      "+06:00"
+    ],
+    "documents": [
+      150,
+      200
+    ],
+    "errors": {
+      "duplicate_invoice": 0,
+      "fx_rate": 0,
+      "payment_allocation": 0,
+      "period_cutoff": 0
+    },
+    "foreign_pct": [
+      0,
+      0
+    ],
+    "period": null,
+    "scenarios": {
+      "C1": 0,
+      "C2": 0
+    },
+    "twins": [
+      3,
+      8
+    ]
+  },
+  "config_sha256": "18c0abcd29ccb5c75e293d2821491aa899299d6624ee09c95a4d3fed5aa85eb3",
+  "generator_version": "0.1.0",
+  "injections": [],
+  "other_lookalikes": {
+    "combined_payment": 4,
+    "late_entry": 3,
+    "monthly_subscription": 5,
+    "overpayment": 1,
+    "real_partial_payment": 3,
+    "repeated_full_payment": 1,
+    "split_payment": 1,
+    "unidentified_receipt": 1
+  },
+  "schema_version": "1.0",
+  "seed": 1005,
+  "twins": [
+    {
+      "distinguishing_feature": "one payment cites two different bills of the vendor and settles both",
+      "kind": "combined_payment",
+      "mimics": "duplicate_invoice",
+      "records": [
+        "invoice/FMNS75",
+        "invoice/Q6W92D",
+        "payment/KYHEQ2"
+      ],
+      "twin_id": "TW-01"
+    },
+    {
+      "distinguishing_feature": "entered after the period, posted on the document date",
+      "kind": "late_entry",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/Q6M30G"
+      ],
+      "twin_id": "TW-02"
+    },
+    {
+      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
+      "kind": "midnight_utc",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/AM8KGE"
+      ],
+      "twin_id": "TW-03"
+    }
+  ],
+  "world": {
+    "documents": 191,
+    "foreign_pct": 0,
+    "industry": "wholesale",
+    "period": "2026-08",
+    "timezone": "+06:00"
+  }
+}

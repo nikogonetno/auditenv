@@ -1,0 +1,23 @@
+{
+  "clean": false,
+  "episode_id": "WF50GH",
+  "issues": [
+    {
+      "affected_ids": [
+        "ledger/FDC9BW"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/WQQGB3",
+          "ledger/FDC9BW"
+        ]
+      ],
+      "expected_amount_minor": 147476000,
+      "issue_id": "WB8B6W",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    }
+  ]
+}

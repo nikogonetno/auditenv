@@ -1,0 +1,61 @@
+{
+  "clean": false,
+  "episode_id": "NWKA39",
+  "issues": [
+    {
+      "affected_ids": [
+        "ledger/PTZG11"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "fx/JZVQH0",
+          "ledger/PTZG11",
+          "payment/HYTHG6"
+        ]
+      ],
+      "expected_amount_minor": 1066564,
+      "issue_id": "J48771",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "fx_rate"
+    },
+    {
+      "affected_ids": [
+        "invoice/BVX4KQ",
+        "payment/HYTHG6"
+      ],
+      "currency": "RUB",
+      "evidence_sets": [
+        [
+          "invoice/BVX4KQ",
+          "ledger/SC6Y6M",
+          "ledger/ZCYS1Y",
+          "payment/HYTHG6"
+        ]
+      ],
+      "expected_amount_minor": 31996935,
+      "issue_id": "NG0VW6",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "payment_allocation"
+    },
+    {
+      "affected_ids": [
+        "ledger/PTZG11"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "ledger/PTZG11",
+          "payment/HYTHG6"
+        ]
+      ],
+      "expected_amount_minor": 566345760,
+      "issue_id": "NZR6MM",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    }
+  ]
+}

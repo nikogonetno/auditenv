@@ -1,0 +1,162 @@
+{
+  "config": {
+    "base_currency": "KZT",
+    "company_offsets": [
+      "+03:00",
+      "+04:00",
+      "+05:00",
+      "+06:00"
+    ],
+    "documents": [
+      150,
+      200
+    ],
+    "errors": {
+      "duplicate_invoice": 1,
+      "fx_rate": 1,
+      "payment_allocation": 0,
+      "period_cutoff": 0
+    },
+    "foreign_pct": [
+      30,
+      60
+    ],
+    "period": null,
+    "scenarios": {
+      "C1": 0,
+      "C2": 0
+    },
+    "twins": [
+      3,
+      8
+    ]
+  },
+  "config_sha256": "18d0a9e1f671664cd98803099633db9791515105fe54054e401979a395b6356d",
+  "generator_version": "0.1.0",
+  "injections": [
+    {
+      "changes": [
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "invoice/8JV54M"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/G1VHCE"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/3N889S"
+        }
+      ],
+      "injection_id": "INJ-01",
+      "issue_ids": [
+        "PZ7MFJ"
+      ],
+      "order": 1,
+      "root_cause": "vendor bill keyed twice, the copy 2 days after issue with the reference retyped",
+      "scenario_id": null,
+      "variant": "same_vendor_ref_reformatted"
+    },
+    {
+      "changes": [
+        {
+          "after": 327989970,
+          "before": 328917930,
+          "field": "debit_minor",
+          "record": "ledger/PNKJ4J"
+        },
+        {
+          "after": "523.11",
+          "before": "524.59",
+          "field": "exchange_rate",
+          "record": "ledger/PNKJ4J"
+        },
+        {
+          "after": 327989970,
+          "before": 328917930,
+          "field": "credit_minor",
+          "record": "ledger/J16C9Q"
+        },
+        {
+          "after": "523.11",
+          "before": "524.59",
+          "field": "exchange_rate",
+          "record": "ledger/J16C9Q"
+        }
+      ],
+      "injection_id": "INJ-02",
+      "issue_ids": [
+        "07SYNR"
+      ],
+      "order": 2,
+      "root_cause": "rate of the entry date 2026-10-03 used instead of the document date 2026-10-01",
+      "scenario_id": null,
+      "variant": "rate_of_entry_date"
+    }
+  ],
+  "other_lookalikes": {
+    "combined_payment": 6,
+    "late_entry": 14,
+    "midnight_utc": 2,
+    "monthly_subscription": 4,
+    "real_partial_payment": 1,
+    "repeated_full_payment": 2,
+    "weekend_document": 3
+  },
+  "schema_version": "1.0",
+  "seed": 2006,
+  "twins": [
+    {
+      "distinguishing_feature": "one payment cites two invoices of the customer and settles both",
+      "kind": "combined_payment",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/4HJK0W",
+        "invoice/EMRK3C",
+        "payment/44E6NK"
+      ],
+      "twin_id": "TW-01"
+    },
+    {
+      "distinguishing_feature": "entered after the period, posted on the document date",
+      "kind": "late_entry",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/EMRK3C"
+      ],
+      "twin_id": "TW-02"
+    },
+    {
+      "distinguishing_feature": "the issuer or UTC date is in another period than the company-local date",
+      "kind": "midnight_utc",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/9NXKG6"
+      ],
+      "twin_id": "TW-03"
+    },
+    {
+      "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
+      "kind": "weekend_document",
+      "mimics": "fx_rate",
+      "records": [
+        "invoice/XSA4GG"
+      ],
+      "twin_id": "TW-04"
+    }
+  ],
+  "world": {
+    "documents": 187,
+    "foreign_pct": 50,
+    "industry": "it_services",
+    "period": "2026-09",
+    "timezone": "+06:00"
+  }
+}

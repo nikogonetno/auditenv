@@ -1,0 +1,25 @@
+{
+  "base_currency": "KZT",
+  "counts": {
+    "fx": 204,
+    "invoices": 140,
+    "ledger": 420,
+    "payments": 56
+  },
+  "documents": 196,
+  "episode_id": "AAD4VM",
+  "period_end": "2026-10-31",
+  "period_start": "2026-10-01",
+  "rounding": {
+    "minor_units": {
+      "CNY": 2,
+      "EUR": 2,
+      "KZT": 2,
+      "RUB": 2,
+      "USD": 2
+    },
+    "mode": "ROUND_HALF_UP"
+  },
+  "schema_version": "1.0",
+  "timezone": "+03:00"
+}

@@ -1,0 +1,25 @@
+{
+  "base_currency": "KZT",
+  "counts": {
+    "fx": 200,
+    "invoices": 113,
+    "ledger": 331,
+    "payments": 44
+  },
+  "documents": 157,
+  "episode_id": "PWMEHD",
+  "period_end": "2026-08-31",
+  "period_start": "2026-08-01",
+  "rounding": {
+    "minor_units": {
+      "CNY": 2,
+      "EUR": 2,
+      "KZT": 2,
+      "RUB": 2,
+      "USD": 2
+    },
+    "mode": "ROUND_HALF_UP"
+  },
+  "schema_version": "1.0",
+  "timezone": "+03:00"
+}
