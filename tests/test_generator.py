@@ -352,6 +352,33 @@ class Stage2(unittest.TestCase):
         self.assertEqual((kinds.get("weekend_document"), kinds.get("late_entry")), ("fx_rate", "period_cutoff"))
 
 
+class Dates(unittest.TestCase):
+    """A trading company works on business days: 2-6% of documents on weekends and holidays, and every book
+    with foreign documents keeps a foreign invoice on an off day as the rate look-alike (PM 21.11 03.15)."""
+
+    def test_off_day_share_and_the_foreign_weekend_document(self):
+        import datetime as dt
+        with tempfile.TemporaryDirectory() as tmp:
+            for seed in range(6):
+                out = Path(tmp) / str(seed)
+                generate_episode(900 + seed, {} if seed % 2 else {"errors": {}}, str(out))
+                invoices, payments, _, _, _ = read_episode(out)
+                policy = json.loads((out / "public" / "policy.json").read_text(encoding="utf-8"))
+                tz = dt.datetime.fromisoformat("2026-01-01T00:00:00" + policy["company_utc_offset"]).tzinfo
+                holidays = set(policy["fx"]["holidays"])
+
+                def off(ts):
+                    day = dt.datetime.fromisoformat(ts).astimezone(tz).date()
+                    return day.isoweekday() in policy["fx"]["weekend_days"] or day.isoformat() in holidays
+
+                days = [off(i["issued_at"]) for i in invoices] + [off(p["timestamp"]) for p in payments]
+                with self.subTest(seed=seed):
+                    self.assertTrue(0.02 <= sum(days) / len(days) <= 0.065, sum(days) / len(days))
+                    foreign = [i for i in invoices if i["currency"] != "KZT"]
+                    if foreign:
+                        self.assertTrue(any(off(i["issued_at"]) for i in foreign))
+
+
 class Determinism(unittest.TestCase):
     def test_same_seed_same_bytes_under_different_hash_seeds(self):
         with tempfile.TemporaryDirectory() as tmp:

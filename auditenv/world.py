@@ -41,6 +41,12 @@ COMBINED_AR_SHARE = 0.05                 # a customer pays two invoices with one
 COMBINED_AP_SHARE = 0.08                 # we pay two bills of one vendor with one payment
 CLERK_RETYPE_SHARE = 0.2                 # bills whose vendor reference the clerk keyed with other separators
 CENTS_SHARE_FOREIGN, CENTS_SHARE_BASE = 0.5, 0.2
+# A trading company works on business days (PM 21.11 03.15: 2-6% of documents on weekends and holidays).
+# Each book draws a quota of OFF_DAY_PERMILLE of its documents; a draw that falls on an off day is kept
+# with probability OFF_DAY_KEEP while the quota lasts, otherwise redrawn (documents) or moved to the next
+# business day (bank value dates, monthly bills). The planted foreign weekend look-alike uses the quota too.
+OFF_DAY_PERMILLE = (25, 55)
+OFF_DAY_KEEP = 0.25
 _DECIMAL = Context(prec=34, rounding=ROUND_HALF_UP, Emin=-999999, Emax=999999, capitals=1, clamp=0, flags=[],
                    traps=[InvalidOperation, DivisionByZero, Overflow])
 MAX_CONTRACTS_PER_VENDOR = 4
@@ -300,6 +306,7 @@ class World:
     twins: list = field(default_factory=list)   # {kind, mimics, records, feature}
     next_key: dict = field(default_factory=dict)
     anchors: dict = field(default_factory=dict)  # record key -> the error type it was built for
+    off_days_left: int = 0                       # documents that may still fall on a weekend or holiday
 
     @property
     def tz(self):
@@ -628,6 +635,37 @@ def entry_rate_differs(world, inv, tolerance=1):
     return abs(conv(inv.total_minor, wrong) - conv(inv.total_minor, right)) > 2 * tolerance
 
 
+def _keep_off_day(rng, world):
+    if world.off_days_left > 0 and rng.random() < OFF_DAY_KEEP:
+        world.off_days_left -= 1
+        return True
+    return False
+
+
+def business_day(rng, world, first, last, off_days=True):
+    """A day in [first, last]: a business day, or while the book's quota lasts sometimes an off day."""
+    for _ in range(50):
+        day = first + dt.timedelta(days=rng.randint(0, (last - first).days))
+        if world.rates.is_business(day) or (off_days and _keep_off_day(rng, world)):
+            return day
+    return day
+
+
+def later_day(rng, world, day, most):
+    """A business day 0..most days after `day` and inside the window, else `day` itself."""
+    later = bank_day(rng, world, day + dt.timedelta(days=rng.randint(0, most)))
+    return later if later <= world.window_end else day
+
+
+def bank_day(rng, world, day):
+    """A value date or a scheduled bill on an off day goes to the next business day, sometimes it stays."""
+    if world.rates.is_business(day) or _keep_off_day(rng, world):
+        return day
+    while not world.rates.is_business(day):
+        day += dt.timedelta(days=1)
+    return day
+
+
 def _part(rng, total, low_pct, high_pct, currency):
     """A share of `total` strictly between 0 and total: whole tenge in KZT, any minor amount otherwise."""
     part = total * rng.randint(low_pct, high_pct) // 100
@@ -727,6 +765,9 @@ def _pay_customer(rng, world, inv, budget, behaviour=None):
         day = issued + dt.timedelta(days=rng.randint(1, inv.terms))
     if day > world.window_end or budget <= 0:
         return []
+    day = bank_day(rng, world, day)
+    if day > world.window_end:
+        return []
     local = local_time(rng, world, day)
     cites = _ar_remittance(rng, [inv.number], cp)
     fx_note = ", each clearing row at the invoice rate" if ccy != BASE else ""
@@ -748,6 +789,7 @@ def _pay_customer(rng, world, inv, budget, behaviour=None):
     text = f"{inv.number} part 1" if behaviour == "split" else f"Partial payment {inv.number}"
     made = [_add_payment(rng, world, "in", cp, local, ccy, first, text, [(inv.key, first)])]
     second_day = day + dt.timedelta(days=rng.randint(3, 15))
+    second_day = bank_day(rng, world, second_day) if second_day <= world.window_end else second_day
     if second_day > world.window_end or budget < 2:
         _twin(world, "real_partial_payment", "payment_allocation", [inv.key, made[0].key],
               "bank amount below the invoice, the whole payment allocated")
@@ -768,8 +810,8 @@ def _pay_customer(rng, world, inv, budget, behaviour=None):
 
 def _repeated_full(rng, world, inv, cp):
     """A partial payment, then the full total again a few days later, both inside the window."""
-    first_day = world.event_date(inv) + dt.timedelta(days=rng.randint(1, 7))
-    second_day = first_day + dt.timedelta(days=rng.randint(3, 10))
+    first_day = bank_day(rng, world, world.event_date(inv) + dt.timedelta(days=rng.randint(1, 7)))
+    second_day = bank_day(rng, world, first_day + dt.timedelta(days=rng.randint(3, 10)))
     total, ccy = inv.total_minor, inv.currency
     first = _part(rng, total, 30, 70, ccy)
     made = [_add_payment(rng, world, "in", cp, local_time(rng, world, first_day), ccy, first,
@@ -790,6 +832,9 @@ def _pay_vendor(rng, world, bills, budget):
     day = max([day] + [world.event_date(b) + dt.timedelta(days=1) for b in bills])
     if day > world.window_end or budget <= 0:
         return []
+    day = bank_day(rng, world, day)
+    if day > world.window_end:
+        return []
     refs = ", ".join(b.vendor_ref for b in bills)
     word = "invoices" if len(bills) > 1 else "invoice"
     text = rng.choice((f"Payment for {word} {refs}", refs, f"Inv {refs}"))
@@ -808,6 +853,9 @@ def _combined_receipt(rng, world, invoices, budget):
     last = max(world.event_date(i) for i in invoices)
     day = last + dt.timedelta(days=rng.randint(1, min(i.terms for i in invoices)))
     if day > world.window_end or budget <= 0:
+        return []
+    day = bank_day(rng, world, day)
+    if day > world.window_end:
         return []
     pay = _add_payment(rng, world, "in", cp, local_time(rng, world, day), invoices[0].currency,
                        sum(i.total_minor for i in invoices), _ar_remittance(rng, [i.number for i in invoices], cp),
@@ -830,7 +878,7 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     anchors = anchors or {}
     low, high = config["documents"]
     neighbours = NEIGHBOUR_INVOICES + anchors.get("period_moves", 0)
-    lookalikes = (1 + (config["foreign_pct"][1] > 0)) if config["twins"][1] else 0
+    lookalikes = (config["twins"][1] > 0) + (config["foreign_pct"][1] > 0)
     planned = (2 * anchors.get("full_receipts", 0) + anchors.get("vendor_bills", 0)
                + anchors.get("foreign_invoices", 0) + anchors.get("period_bills", 0) + 2 * neighbours + lookalikes)
     if high < planned + reserved_documents:
@@ -848,6 +896,7 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     world = World(period, period_start, period_end, window_start, window_end, offset, industry, foreign_pct, rates,
                   {}, {}, {})
     target = max(rng.randint(low, high), planned + reserved_documents) - reserved_documents
+    world.off_days_left = (target + reserved_documents) * rng.randint(*OFF_DAY_PERMILLE) // 1000
     subscription_pct = rng.randint(*SUBSCRIPTION_PCT)
 
     def currency():
@@ -894,6 +943,10 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         base_vendors = [cp]
         one_off.append(cp)
 
+    # The foreign weekend look-alike planted below takes its place in the off-day quota up front.
+    if foreign_customers or any(c.currency != BASE for c in one_off):
+        world.off_days_left = max(world.off_days_left - 1, 0)
+
     def room():
         return target - world.documents()
 
@@ -907,6 +960,7 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         y, m = window_start.year, window_start.month
         while dt.date(y, m, 1) <= window_end:
             day = dt.date(y, m, day_of_month)
+            day = bank_day(rng, world, day) if window_start <= day <= window_end and room() > planned else day
             if window_start <= day <= window_end and room() > planned:
                 first, last = month_bounds(y, m)
                 inv = _add_invoice(rng, world, "AP", cp, local_time(rng, world, day, 0), numbers, fixed,
@@ -919,8 +973,7 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
                   "same vendor and amount, other vendor_ref and service month")
 
     def window_day(first=None, last=None):
-        first, last = first or window_start, last or window_end
-        return first + dt.timedelta(days=rng.randint(0, (last - first).days))
+        return business_day(rng, world, first or window_start, last or window_end)
 
     def new_ar(cp, day):
         return _add_invoice(rng, world, "AR", cp, local_time(rng, world, day), numbers)
@@ -935,23 +988,23 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         inv = new_ar(cp, window_day(last=window_end - dt.timedelta(days=15)))
         pays = _pay_customer(rng, world, inv, 1, "on_time")
         if not pays:
-            day = world.event_date(inv) + dt.timedelta(days=rng.randint(1, 10))
+            day = bank_day(rng, world, world.event_date(inv) + dt.timedelta(days=rng.randint(1, 10)))
             pays = [_add_payment(rng, world, "in", cp, local_time(rng, world, day), inv.currency, inv.total_minor,
                                  _ar_remittance(rng, [inv.number], cp), [(inv.key, inv.total_minor)])]
         world.anchors.update({inv.key: "payment_allocation", pays[0].key: "payment_allocation"})
     for _ in range(anchors.get("vendor_bills", 0)):
         world.anchors[new_ap(rng.choice(one_off), window_day()).key] = "duplicate_invoice"
     for _ in range(anchors.get("foreign_invoices", 0)):
-        inv = new_ar(rng.choice(foreign_customers), window_day())
+        inv = new_ar(rng.choice(foreign_customers), business_day(rng, world, window_start, window_end, False))
         for _ in range(500):                     # redraw until a business day whose entry date has another rate
             if rates.is_business(world.event_date(inv)) and entry_rate_differs(world, inv):
                 break
-            local = local_time(rng, world, window_day())
+            local = local_time(rng, world, business_day(rng, world, window_start, window_end, False))
             inv.issued_at, inv.entered_at = local, entered_time(rng, world, local)
             inv.service_from = inv.service_to = local.date().isoformat()
         world.anchors[inv.key] = "fx_rate"
     for _ in range(anchors.get("period_bills", 0)):
-        day = period_end + dt.timedelta(days=rng.randint(1, 3))
+        day = window_day(period_end + dt.timedelta(days=1), period_end + dt.timedelta(days=3))
         inv = _add_invoice(rng, world, "AP", rng.choice(base_vendors), local_time(rng, world, day, 0))
         world.anchors[inv.key] = "period_cutoff"
     for first, last in ((window_start, period_start - dt.timedelta(days=1)), (period_end + dt.timedelta(days=1), window_end)):
@@ -964,16 +1017,19 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
 
     # Look-alikes of the rate and period errors (docs/tasks/B_stage2.md item 4), in clean and erroneous
     # books alike and counted in `planned`, so small books hold them too. A foreign invoice dated on a
-    # non-business day takes the previous business day's rate; an invoice of the period's last days
-    # entered in the next month is posted on its own date.
+    # non-business day takes the previous business day's rate: every book with foreign documents has one
+    # (PM 21.11 03.15), whatever config.twins says. An invoice of the period's last days entered in the
+    # next month is posted on its own date.
+    days = [period_start + dt.timedelta(days=n) for n in range((period_end - period_start).days + 1)]
+    off_days = [d for d in days if not rates.is_business(d)]
+    foreign_parties = foreign_customers or [c for c in one_off if c.currency != BASE]
+    if foreign_parties and off_days:
+        cp, day = rng.choice(foreign_parties), rng.choice(off_days)
+        inv = new_ar(cp, day) if cp.role == "customer" else new_ap(cp, day)
+        _twin(world, "weekend_document", "fx_rate", [inv.key],
+              "dated on a non-business day, rate of the previous business day by the policy")
     if config["twins"][1]:
-        days = [period_start + dt.timedelta(days=n) for n in range((period_end - period_start).days + 1)]
-        off_days = [d for d in days if not rates.is_business(d)]
-        if foreign_customers and off_days:
-            inv = new_ar(rng.choice(foreign_customers), rng.choice(off_days))
-            _twin(world, "weekend_document", "fx_rate", [inv.key],
-                  "dated on a non-business day, rate of the previous business day by the policy")
-        inv = new_ar(rng.choice(customers), period_end - dt.timedelta(days=rng.randint(0, 2)))
+        inv = new_ar(rng.choice(customers), window_day(period_end - dt.timedelta(days=2), period_end))
         event = inv.issued_at.astimezone(world.tz)
         for _ in range(200):                 # the clean entry delay, drawn until it lands in the next month
             if world.local_date(inv.entered_at) > period_end:
@@ -999,12 +1055,12 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         if roll < COMBINED_AR_SHARE and room() - unknown >= 3:
             cp = rng.choice(customers)
             day = window_day()
-            pair = [new_ar(cp, day), new_ar(cp, min(day + dt.timedelta(days=rng.randint(0, 7)), window_end))]
+            pair = [new_ar(cp, day), new_ar(cp, later_day(rng, world, day, 7))]
             _combined_receipt(rng, world, pair, room() - unknown)
         elif roll < COMBINED_AR_SHARE + COMBINED_AP_SHARE and room() - unknown >= 3:
             cp = rng.choice(one_off)
             day = window_day()
-            pair = [new_ap(cp, day), new_ap(cp, min(day + dt.timedelta(days=rng.randint(0, 10)), window_end))]
+            pair = [new_ap(cp, day), new_ap(cp, later_day(rng, world, day, 10))]
             _pay_vendor(rng, world, pair, room() - unknown)
         elif roll < 0.55:
             inv = new_ar(rng.choice(customers), window_day())
