@@ -33,33 +33,38 @@
 
 Эпизод состоит из двух папок. `public/` агент видит только через инструменты среды. `private/` читает только оценщик, и только при submit. Все суммы хранятся целыми числами в минимальных единицах, все времена в ISO 8601 с явным сдвигом.
 
-### 3.2 Открытые файлы [v2: состав по §03, поля сверить с кейс §03]
+### 3.2 Открытые файлы [кейс §03, решения PM 20.11; эталон формата `tests/fixtures/mini_v03`]
 
-Сначала идут обязательные поля и ключи из §03, после них доменные поля A. Таблицу соответствия ведёт A. Ниже текущее состояние, колонка golden v0.1 показывает, что нужно поменять.
+Обязательные поля и ключи кейса §03 идут первыми и в его порядке, доменные поля A после них. Других открытых файлов нет: `counterparties.csv`, `allocations.csv` и `accounts.csv` убраны (правило PM по умолчанию). Имя контрагента лежит в документах, план счетов в `policy.json`, разнесения видны в `ledger.csv` по паре `payment_id` и `invoice_id`.
 
-| Файл по §03 | Обязательное по §03 | Доменные поля A после обязательных | В golden v0.1 |
-|---|---|---|---|
-| `manifest.json` | [кейс §03] | компания, отрасль, базовая валюта, сдвиг, период, окно | файла нет |
-| `invoices.jsonl` | по строке на счёт, внутри `line_items` [кейс §03] | direction, invoice_number, vendor_ref, po_ref, issued_at, entered_at, due_date, currency, total_minor, service_from, service_to | `invoices.csv` и `invoice_lines.csv` |
-| `payments.jsonl` | по строке на платёж, внутри `invoice_refs` [кейс §03: смысл поля] | direction, counterparty_name_raw, value_at в UTC, entered_at, currency, amount_minor, remittance_info | `payments.csv`, разнесения в `allocations.csv` |
-| `ledger.csv` | первыми `row_id, timestamp, account, debit_minor, credit_minor, currency, entity_id, invoice_id, payment_id` | затем `je_id, entered_at, doc_currency, doc_amount_minor, exchange_rate, memo` | нет `timestamp, currency, entity_id, invoice_id, payment_id` |
-| `fx.csv` | `source_currency, target_currency` [кейс §03: остальные колонки] | дата и курс | колонки `date, currency, base, rate` |
-| `policy.json` | правила учёта | см. 3.5 | есть |
+| Файл | Обязательное по кейсу §03, в этом порядке | Доменные поля после |
+|---|---|---|
+| `manifest.json` | `schema_version, episode_id, base_currency, period_start, period_end, timezone`, число записей по таблицам `counts`, число документов `documents`, правила округления `rounding` | нет |
+| `invoices.jsonl` | `doc_id, invoice_id, entity_id, issued_at, due_at, currency, total_minor, line_items` (`line_id, description, qty, unit_price_minor, amount_minor`) | `direction, counterparty_name, invoice_number, vendor_ref, po_ref, entered_at, service_from, service_to` |
+| `payments.jsonl` | `doc_id, payment_id, timestamp, currency, amount_minor, invoice_refs` | `entity_id, direction, counterparty_name_raw, entered_at, remittance_info` |
+| `ledger.csv` | `row_id, timestamp, account, debit_minor, credit_minor, currency, entity_id, invoice_id, payment_id` | `je_id, entered_at, doc_currency, doc_amount_minor, exchange_rate, memo` |
+| `fx.csv` | `date, source_currency, target_currency, rate` | `fx_id` |
+| `policy.json` | выбор даты курса, границы периода, округление | см. §3.5 |
 
-Правила для `ledger.csv` [v2]:
+Значения полей:
 
-- `debit_minor` и `credit_minor` хранятся в базовой валюте, заполнена ровно одна из двух. `currency` всегда равна базе.
-- `invoice_id` и `payment_id` заменяют `source_id` и `settles_invoice_id`. У строк счёта заполнен `invoice_id`. У строк платежа заполнен `payment_id`, а у строк погашения 1210 и 3310 ещё и `invoice_id` погашаемого счёта.
-- В валютных платёжных проводках есть строки курсовой разницы 6250 и 7430. Колонка курса называется `exchange_rate`, а не `fx_rate`, иначе имя типа ошибки попадёт в открытый файл (INV-23).
-- Открыто, владелец A [кейс §03]: что значит `timestamp` (дата проводки или полное время) и `entity_id` (контрагент или юрлицо).
-
-Файлы сверх §03 (`counterparties.csv`, `allocations.csv`, `accounts.csv`) оставляем только после ответа организаторов, можно ли добавлять файлы и поля сверх §03.
+- `timezone` это фиксированный сдвиг компании вида `"+05:00"`.
+- `timestamp` в `ledger.csv` это полное время ISO 8601 со сдвигом компании. Период строки определяется местной датой `timestamp`.
+- `timestamp` платежа это время из банковской выписки, ISO 8601 с явным сдвигом (`+00:00`, а не `Z`).
+- `entity_id` это ID контрагента. У неопознанного поступления он `null`.
+- `invoice_refs` это отсортированный список `invoice_id`, на которые указывает назначение платежа. Если ссылки нет, `null`. Если ссылка подходит к нескольким счетам, как в C2, в списке все они.
+- Отсутствующие ссылки это явный `null`: пустая ячейка CSV или `null` в JSON (кейс §03).
+- `debit_minor` и `credit_minor` в базовой валюте, заполнена ровно одна из двух, `currency` равна базе.
+- У строк счёта заполнен `invoice_id`. У строк платежа заполнен `payment_id`, у строк погашения 1210 и 3310 ещё и `invoice_id` погашаемого счёта.
+- В валютных платёжных проводках есть строки курсовой разницы 6250 и 7430.
+- Колонка курса называется `exchange_rate`, а не `fx_rate`, иначе имя типа ошибки попадёт в открытый файл (INV-23).
+- JSONL пишется одной строкой на объект с ключами в порядке таблицы. JSON пишется с `sort_keys=True, indent=2`. CSV пишется с `lineterminator="\n"`.
 
 ### 3.3 Идентификаторы [v2]
 
 - ID состоит из 6 символов Crockford Base32 и берётся из `random.Random(seed)`. ID назначаются после инъекций и уникальны между всеми таблицами. Уникальность проверяет `test_ids_are_unique_across_tables`.
 - Ссылаться на запись можно как `<таблица>/<id>` или как голый `<id>`, matcher принимает обе формы. Снимается только известный префикс: `invoice`, `payment`, `ledger`, `allocation`, `counterparty`, `line`, `fx`, `doc`. Это тот же список из восьми, что в §5.2 (QA D-3). Для документа годятся и `doc_id`, и `invoice_id` или `payment_id`.
-- **[предложение, QA P-04]** У строки `fx.csv` появляется обычный ID без слешей. Ссылки вида `fx/2026-09-14/USD/KZT` ломают правило «с префиксом и без».
+- У строки `fx.csv` обычный ID `fx_id` без слешей, ссылка на неё `fx/<fx_id>` (QA P-04, принято PM).
 - `invoice_number` и `vendor_ref` это деловые атрибуты, а не ID. Смена ID их не трогает, truth на них не ссылается.
 - `je_id` остаётся дополнительной колонкой для группировки строк проводки. В `affected_ids` он не попадает.
 
@@ -67,13 +72,14 @@
 
 - У компании фиксированный сдвиг из `+03:00, +04:00, +05:00, +06:00`. Он записан в `manifest.json` и `policy.json`.
 - Период равен календарному месяцу по времени компании. Окно книги шире периода на 7 дней с каждой стороны, и с каждой стороны в нём не меньше 10 настоящих строк соседних периодов (INV-03).
-- Дата проводки равна местной дате `issued_at` счёта или `value_at` платежа. `entered_at` на дату не влияет.
+- Дата проводки равна местной дате `issued_at` счёта или `timestamp` платежа. `entered_at` на дату не влияет.
 
 ### 3.5 policy.json
 
 - Структура одинаковая во всех эпизодах, у чистых и у ошибочных (R-06, E-19). Правило не появляется только там, где есть ошибка.
 - Правила учёта берутся из раздела «Правила учёта» спецификации A.
-- **[предложение, QA P-05]** Вместо `non_business_days` со словом `weekends` два поля: `weekend_days` с номерами дней ISO и `holidays` со списком дат.
+- В `policy.fx` нерабочие дни заданы двумя полями: `weekend_days` с номерами дней ISO и `holidays` со списком дат (QA P-05, принято PM).
+- План счетов лежит в `policy.accounts` как список `{code, name}`.
 
 ### 3.6 truth.json [v2]
 
@@ -97,12 +103,16 @@
 - `affected_ids` это отсортированное каноническое множество. Для дубля это оба счёта. Для разнесения это платёж и счёт. Для курса и периода это `row_id` несущей строки: 1210 у счёта клиенту, 3310 у счёта поставщика, 1030 у платежа.
 - `expected_amount_minor` всегда положительное и считается по формуле своего типа из финальных открытых файлов. Порядок инъекций на сумму не влияет.
 - `currency`: у дубля и разнесения валюта документа, у курса и периода базовая валюта.
-- `evidence_sets` это список допустимых наборов доказательств. Каждый набор достаточен, то есть сумма пересчитывается только из него и `policy.json` (INV-17).
+- `evidence_sets` это список допустимых наборов доказательств. Каждый набор достаточен, то есть сумма пересчитывается только из него и `policy.json` (INV-17). Состав набора по типам:
+  - `duplicate_invoice`: оба счёта и несущая строка 3310 каждого;
+  - `payment_allocation`: платёж, счёт, все строки погашения этого платежа по этому счёту (1210 или 3310 с его `payment_id` и `invoice_id`) и строка 3510 этого платежа;
+  - `fx_rate`: документ, несущая строка и `fx/<fx_id>` строки курса за дату по правилу;
+  - `period_cutoff`: документ и несущая строка.
 - Чистая компания: `"clean": true`, `"issues": []`.
 - Дополнительные поля A. `scenario_id` нужен только для отчётов, matcher его не читает. `tolerance_minor` matcher читает. Он равен 1 минимальной единице на каждую конвертацию в формуле, по умолчанию 1, и `expected_amount_minor > 2·tolerance_minor` (INV-20) [кейс §05: задаёт ли кейс допуск сам].
 - `je/…` не встречается ни в `affected_ids`, ни в `evidence_sets`.
 
-`provenance.json`, `id_map.json` и `world.json` описаны в спецификации A. Оценщик их не читает.
+`truth.json` содержит также `episode_id`. `provenance.json` описан в `docs/DOMAIN_SPEC_A.md` и `docs/tasks/A_generator.md`. Оценщик его не читает.
 
 ## 4. Контракт среды
 
@@ -160,7 +170,15 @@
 | курсор из прошлого эпизода | отказ |
 | **[предложение B, R-07 и R-09]** сообщение политики больше 1 МБ, NaN, Infinity или `1e999`, целое длиннее 30 цифр, вложенность глубже 32, битый UTF-8, одиночные суррогаты `\ud800…\udfff` в строках и ключах, вход не `str` или `bytes` (подклассы тоже) | короткая ошибка в наблюдении, процесс не падает. Разбор только через `auditenv.server.decode_message`: размер проверяется до `json.loads`, наружу выходит только `BadMessage`. Всё, что декодер принял, записывается в UTF-8 без ошибок. Эти случаи входят в E-03 |
 
-### 4.4 Раннер, траектории и изоляция [код `auditenv/runner.py`, `auditenv/run.py`]
+### 4.4 config [v2]
+
+- Каждый тип ошибки включается и настраивается отдельно, всего не больше 12 ошибок.
+- Seed задаёт только случайные значения внутри config.
+- Неизвестный ключ или недопустимое значение дают явную ошибку, а не тихий дефолт (E-23).
+- config с другим порядком ключей даёт тот же эпизод (E-16).
+- Схему ключей B и A пишут вместе на чекпоинте 1 и вносят сюда.
+
+### 4.5 Раннер, траектории и изоляция [код `auditenv/runner.py`, `auditenv/run.py`]
 
 - **Связь с политикой.** Политика работает в отдельном процессе и общается JSON-строками через stdin и stdout. Раннер отправляет `{observation, info}` после reset и `{observation, reward, terminated, truncated, info}` после каждого шага. Политика отвечает одной строкой-действием. Каждая строка проходит `decode_message`.
 - **Лимиты.** 60 секунд на эпизод. Если политика молчит или закрыла вывод, эпизод заканчивается через `truncate()`. Раннер не падает ни от чего, что делает политика.
@@ -172,14 +190,6 @@
 - **Oracle** работает внутри процесса оценщика (кейс §06) и берёт truth из среды.
 - **Траектории** (кейс §09): строки JSON с ключами `episode_id, step, action, observation, reward, terminated, truncated`. Шаг 0 это reset. Нераспознанная строка записывается как `{"bad_message": код}`, действие больше 64 КБ как размер и sha256. U+2028, U+2029 и U+0085 экранируются. Траектории oracle содержат правильный ответ в действиях, поэтому для закрытых эпизодов их не публикуем.
 - **CLI:** `python -m auditenv.run --policy {random,flag_all,oracle} --episode-dir DIR [--mode eval] [--sandbox auto|required|off] [--trajectories PATH] [--grader-log PATH]`. Демо: `make demo`.
-
-### 4.5 config [v2]
-
-- Каждый тип ошибки включается и настраивается отдельно, всего не больше 12 ошибок.
-- Seed задаёт только случайные значения внутри config.
-- Неизвестный ключ или недопустимое значение дают явную ошибку, а не тихий дефолт (E-23).
-- config с другим порядком ключей даёт тот же эпизод (E-16).
-- Схему ключей B и A пишут вместе на чекпоинте 1 и вносят сюда.
 
 ## 5. Оценка
 
@@ -254,13 +264,16 @@ reward = clip(2·F1 − 1 − 0.002·inspection_steps, −1, 1)
 
 | Папка | Владелец |
 |---|---|
-| `auditenv/world.py`, `auditenv/inject/`, `auditenv/transform.py`, экспорт эпизодов | A |
-| `auditenv/env.py`, `auditenv/grader/`, `auditenv/server.py`, `policies/`, `scripts/`, Docker | B |
-| `tests/fixtures/` | A кладёт, B не правит |
+| `auditenv/generate.py`, `auditenv/world.py`, `auditenv/inject/`, `auditenv/transform.py`, `tests/test_generator.py`, эпизоды | A, ветка `a/generator` |
+| `auditenv/env.py`, `auditenv/config.py`, `auditenv/grader/`, `auditenv/runner.py`, `auditenv/server.py`, `policies/`, `scripts/`, Docker | B |
+| `auditenv/verify/`, `tests/test_verify.py` | V, отдельная сессия в worktree `~/auditenv-v`, ветка `v/verifier`; код генератора не читает |
+| `tests/fixtures/` | `golden_v0.1` от A, `mini_v03` от B; правится только своим владельцем |
 | `qa/` | QA |
 | `SPEC.md`, `CLAUDE.md`, `README.md`, `Makefile` | оба, через PR |
 
 ## 8. Открытые вопросы, блокируют заморозку
+
+Ответы PM от 20.11 лежат в `docs/PM_DECISIONS.md` и важнее этого списка. Пункты 1, 3, 4, 5 и 6 закрыты, пункт 2 ждёт организаторов. Действует правило по умолчанию из раздела про схему. По пункту 8 PM решил: от 150 до 200 документов. Пункт 9 принят в формулировке QA.
 
 1. Текст §03, §04 и §05 кейса в репозиторий, дословно или выпиской. Без него нельзя назвать действия и закрыть поля `manifest.json`, `timestamp`, `entity_id`, `invoice_refs`.
 2. Опубликованы ли определения проверок жюри. Можно ли добавлять поля и файлы сверх §03.
