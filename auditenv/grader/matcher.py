@@ -4,7 +4,7 @@ A finding matches an issue only if type, the affected ID set, the amount within
 tolerance, the currency and a full evidence set all agree. Matching is a maximum
 bipartite matching, so a repeated finding can close at most one issue.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 ISSUE_TYPES = frozenset({"duplicate_invoice", "fx_rate", "payment_allocation", "period_cutoff"})
 # Only these table prefixes are stripped, once. `je` is deliberately absent:
@@ -16,9 +16,9 @@ DEFAULT_TOLERANCE_MINOR = 1
 # Field names of a submitted finding. Case §04/§05 may rename them: change only here.
 F_TYPE = "type"
 F_AFFECTED = "affected_ids"
-F_AMOUNT = "amount_minor"
+F_AMOUNT = "claimed_amount_minor"
 F_CURRENCY = "currency"
-F_EVIDENCE = "evidence"
+F_EVIDENCE = "evidence_ids"
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,11 @@ def normalize_id(ref):
 
 # Exact type checks, not isinstance: a subclass could override __len__, __eq__ or
 # __hash__ and fake a match when the grader is called in-process (review, robustness).
+def _alias(ids, aliases):
+    """Map document ids (doc_id) to their canonical invoice_id or payment_id, case §03."""
+    return frozenset(aliases.get(x, x) for x in ids) if aliases else ids
+
+
 def _is_id_list(value):
     return type(value) is list and all(type(x) is str for x in value)
 
@@ -64,15 +69,19 @@ def _is_minor_amount(value):
     return type(value) is int and value >= 0
 
 
-def parse_finding(raw):
+def parse_finding(raw, aliases=None):
     """Normalized Finding, or None when the finding is malformed. Malformed findings still count as FP.
 
     Never raises: anything the agent sends is either a valid finding or an invalid one.
+    `aliases` maps normalized document ids to canonical record ids.
     """
     try:
-        return _parse_finding(raw)
+        finding = _parse_finding(raw)
     except Exception:
         return None
+    if finding is None or not aliases:
+        return finding
+    return replace(finding, affected=_alias(finding.affected, aliases), evidence=_alias(finding.evidence, aliases))
 
 
 def _parse_finding(raw):
@@ -97,7 +106,7 @@ def _parse_finding(raw):
     )
 
 
-def parse_truth(truth):
+def parse_truth(truth, aliases=None):
     """Issues sorted by issue_id. Raises ValueError on a malformed or inconsistent truth file."""
     if not isinstance(truth, dict) or not isinstance(truth.get("issues"), list):
         raise ValueError("truth must be an object with an issues list")
@@ -116,10 +125,10 @@ def parse_truth(truth):
             issue = Issue(
                 issue_id=raw["issue_id"],
                 type=raw["type"],
-                affected=frozenset(map(normalize_id, raw["affected_ids"])),
+                affected=_alias(frozenset(map(normalize_id, raw["affected_ids"])), aliases),
                 expected_amount_minor=raw["expected_amount_minor"],
                 currency=raw["currency"],
-                evidence_sets=tuple(frozenset(map(normalize_id, s)) for s in raw["evidence_sets"]),
+                evidence_sets=tuple(_alias(frozenset(map(normalize_id, s)), aliases) for s in raw["evidence_sets"]),
                 tolerance_minor=raw.get("tolerance_minor", DEFAULT_TOLERANCE_MINOR),
             )
         except (KeyError, TypeError, AttributeError) as exc:

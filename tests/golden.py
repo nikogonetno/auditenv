@@ -56,9 +56,10 @@ def oracle_findings(truth):
         {
             "type": i["type"],
             "affected_ids": list(i["affected_ids"]),
-            "amount_minor": i["expected_amount_minor"],
+            "claimed_amount_minor": i["expected_amount_minor"],
             "currency": i["currency"],
-            "evidence": list(i["evidence_sets"][0]),
+            "evidence_ids": list(i["evidence_sets"][0]),
+            "explanation": f"oracle: {i['type']}",
         }
         for i in truth["issues"]
     ]

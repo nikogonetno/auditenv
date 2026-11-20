@@ -34,7 +34,7 @@ def ref_norm(x):
 def ref_valid(f):
     if type(f) is not dict:
         return False
-    t, a, m, c, e = (f.get(k) for k in ("type", "affected_ids", "amount_minor", "currency", "evidence"))
+    t, a, m, c, e = (f.get(k) for k in ("type", "affected_ids", "claimed_amount_minor", "currency", "evidence_ids"))
     return (type(t) is str and t in TYPES and type(a) is list and a and all(type(x) is str for x in a)
             and type(m) is int and m >= 0 and type(c) is str and len(c) == 3 and c.isascii() and c.isalpha()
             and c.isupper() and type(e) is list and len(e) <= 10 and all(type(x) is str for x in e))
@@ -45,9 +45,9 @@ def ref_ok(f, t):
         return False
     if {ref_norm(x) for x in f["affected_ids"]} != {ref_norm(x) for x in t["affected_ids"]}:
         return False
-    if abs(f["amount_minor"] - t["expected_amount_minor"]) > t.get("tolerance_minor", 1) or f["currency"] != t["currency"]:
+    if abs(f["claimed_amount_minor"] - t["expected_amount_minor"]) > t.get("tolerance_minor", 1) or f["currency"] != t["currency"]:
         return False
-    ev = {ref_norm(x) for x in f["evidence"]}
+    ev = {ref_norm(x) for x in f["evidence_ids"]}
     return any({ref_norm(x) for x in s} <= ev for s in t["evidence_sets"])
 
 
@@ -95,14 +95,14 @@ def edit(fs, **kw):
     return out
 
 
-flag_all = [{"type": ty, "affected_ids": [i], "amount_minor": 0, "currency": BASE, "evidence": [i]} for i in ALL for ty in TYPES]
-spray = [{"type": ty, "affected_ids": list(ALL), "amount_minor": 0, "currency": BASE, "evidence": ALL[:10]} for ty in TYPES]
+flag_all = [{"type": ty, "affected_ids": [i], "claimed_amount_minor": 0, "currency": BASE, "evidence_ids": [i]} for i in ALL for ty in TYPES]
+spray = [{"type": ty, "affected_ids": list(ALL), "claimed_amount_minor": 0, "currency": BASE, "evidence_ids": ALL[:10]} for ty in TYPES]
 pairs_c1 = {}
 for idx, t in enumerate(T["issues"]):
     pairs_c1.setdefault(tuple(t["affected_ids"]), []).append(idx)
 c1_idx = {i for v in pairs_c1.values() if len(v) > 1 for i in v}
 swap = {"fx_rate": "period_cutoff", "period_cutoff": "fx_rate"}
-pad = lambda n: (lambda g: (g["evidence"] + [x for x in ALL if ref_norm(x) not in {ref_norm(y) for y in g["evidence"]}])[:n])
+pad = lambda n: (lambda g: (g["evidence_ids"] + [x for x in ALL if ref_norm(x) not in {ref_norm(y) for y in g["evidence_ids"]}])[:n])
 
 CASES = [
     ("oracle, 0 шагов", O, 0, T),
@@ -115,20 +115,20 @@ CASES = [
     ("пометить всё, чистая компания", flag_all, 40, CLEAN),
     ("1 ложный вывод на чистой", O[:1], 0, CLEAN),
     ("каждый вывод дважды", O + O, 0, T),
-    ("сумма мимо на 2", edit(O, amount_minor=lambda g: g["amount_minor"] + 2), 0, T),
+    ("сумма мимо на 2", edit(O, claimed_amount_minor=lambda g: g["claimed_amount_minor"] + 2), 0, T),
     ("не та валюта", edit(O, currency=lambda g: "USD" if g["currency"] != "USD" else "EUR"), 0, T),
-    ("без доказательств", edit(O, evidence=[]), 0, T),
-    ("нет одного ID в доказательствах", edit(O, evidence=lambda g: g["evidence"][1:]), 0, T),
-    ("доказательства добиты до 10", edit(O, evidence=pad(10)), 0, T),
-    ("11 ID в доказательствах", edit(O, evidence=pad(11)), 0, T),
+    ("без доказательств", edit(O, evidence_ids=[]), 0, T),
+    ("нет одного ID в доказательствах", edit(O, evidence_ids=lambda g: g["evidence_ids"][1:]), 0, T),
+    ("доказательства добиты до 10", edit(O, evidence_ids=pad(10)), 0, T),
+    ("11 ID в доказательствах", edit(O, evidence_ids=pad(11)), 0, T),
     ("ID с префиксом таблицы", O, 0, T),
     ("ID без префикса", edit(O, affected_ids=lambda g: [ref_norm(x) for x in g["affected_ids"]],
-                              evidence=lambda g: [ref_norm(x) for x in g["evidence"]]), 0, T),
-    ("несуществующие ID", edit(O, affected_ids=["ZZZZZZ"], evidence=["ZZZZZZ"]), 0, T),
+                              evidence_ids=lambda g: [ref_norm(x) for x in g["evidence_ids"]]), 0, T),
+    ("несуществующие ID", edit(O, affected_ids=["ZZZZZZ"], evidence_ids=["ZZZZZZ"]), 0, T),
     ("распыление ID", spray, 0, T),
     ("лишний ID в affected_ids", edit(O, affected_ids=lambda g: g["affected_ids"] + [ALL[0]]), 0, T),
     ("половина oracle", O[: len(O) // 2], 0, T),
-    ("oracle плюс 1 ложный", O + [{"type": "fx_rate", "affected_ids": [ALL[0]], "amount_minor": 5, "currency": BASE, "evidence": [ALL[0]]}], 0, T),
+    ("oracle плюс 1 ложный", O + [{"type": "fx_rate", "affected_ids": [ALL[0]], "claimed_amount_minor": 5, "currency": BASE, "evidence_ids": [ALL[0]]}], 0, T),
     ("C1, курс и период перепутаны", [dict(f, type=swap[f["type"]]) if i in c1_idx else f for i, f in enumerate(O)], 0, T),
 ]
 
@@ -148,18 +148,18 @@ rng = random.Random(20261119)
 def mutate(f):
     g = copy.deepcopy(f)
     m = rng.randrange(12)
-    if m == 0: g["amount_minor"] += rng.choice([-2, -1, 1, 2, 10**6])
+    if m == 0: g["claimed_amount_minor"] += rng.choice([-2, -1, 1, 2, 10**6])
     elif m == 1: g["currency"] = rng.choice(["USD", "EUR", "KZT", "kzt", "US", "USDD", 1])
-    elif m == 2: g["evidence"] = g["evidence"][1:]
-    elif m == 3: g["evidence"] = g["evidence"] + rng.sample(ALL, rng.randint(0, 8))
+    elif m == 2: g["evidence_ids"] = g["evidence_ids"][1:]
+    elif m == 3: g["evidence_ids"] = g["evidence_ids"] + rng.sample(ALL, rng.randint(0, 8))
     elif m == 4: g["affected_ids"] = g["affected_ids"] + [rng.choice(ALL)]
     elif m == 5: g["type"] = rng.choice(TYPES + ["Fx_Rate", "", None])
     elif m == 6: g["affected_ids"] = [ref_norm(x) for x in g["affected_ids"]]
-    elif m == 7: g["amount_minor"] = rng.choice([True, float(g["amount_minor"]), str(g["amount_minor"]), -1, None])
+    elif m == 7: g["claimed_amount_minor"] = rng.choice([True, float(g["claimed_amount_minor"]), str(g["claimed_amount_minor"]), -1, None])
     elif m == 8: g.pop(rng.choice(list(g)))
-    elif m == 9: g["evidence"] = g["evidence"] * rng.randint(2, 4)
+    elif m == 9: g["evidence_ids"] = g["evidence_ids"] * rng.randint(2, 4)
     elif m == 10: g["affected_ids"] = rng.choice([[], "x", None, [1], g["affected_ids"] * 2])
-    else: g["evidence"] = [("payment/" if rng.random() < .5 else "") + ref_norm(x) for x in g["evidence"]]
+    else: g["evidence_ids"] = [("payment/" if rng.random() < .5 else "") + ref_norm(x) for x in g["evidence_ids"]]
     return g
 
 
@@ -171,8 +171,8 @@ for n in range(N_FUZZ):
         src = rng.choice(O)
         r = rng.random()
         F.append(copy.deepcopy(src) if r < 0.45 else mutate(src) if r < 0.85 else rng.choice([
-            {"type": rng.choice(TYPES), "affected_ids": [rng.choice(ALL)], "amount_minor": rng.randint(0, 10**9),
-             "currency": BASE, "evidence": rng.sample(ALL, 3)}, None, [], "x", 7, {}]))
+            {"type": rng.choice(TYPES), "affected_ids": [rng.choice(ALL)], "claimed_amount_minor": rng.randint(0, 10**9),
+             "currency": BASE, "evidence_ids": rng.sample(ALL, 3)}, None, [], "x", 7, {}]))
     k = rng.randint(0, 120)
     b, r = b_score(F, truth, k), ref_score(F, truth, k)
     if b != r:

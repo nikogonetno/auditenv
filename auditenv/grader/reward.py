@@ -22,15 +22,18 @@ def terminal_reward(f1, inspection_steps):
     return float(min(Fraction(1), max(Fraction(-1), raw)))
 
 
-def score(findings, truth, inspection_steps):
-    """Grade one submit. The result is for the grader log only, never for the agent in eval."""
+def score(findings, truth, inspection_steps, aliases=None):
+    """Grade one submit. The result is for the grader log only, never for the agent in eval.
+
+    `aliases` maps normalized document ids (doc_id) to canonical record ids, case §03.
+    """
     # Exact list: a subclass could lie about its length and push fp below zero.
     if type(findings) is not list:
         raise TypeError("findings must be a list")
     if type(inspection_steps) is not int or inspection_steps < 0:
         raise ValueError("inspection_steps must be a non-negative int")
-    issues = parse_truth(truth)
-    parsed = [parse_finding(f) for f in findings]
+    issues = parse_truth(truth, aliases)
+    parsed = [parse_finding(f, aliases) for f in findings]
     pairs = match(parsed, issues)
     tp = len(pairs)
     fp = len(findings) - tp
@@ -40,9 +43,9 @@ def score(findings, truth, inspection_steps):
         "tp": tp,
         "fp": fp,
         "fn": fn,
-        # Vacuous cases count as 1: no claims means no false claims, no issues means none missed.
-        "precision": float(Fraction(tp, tp + fp)) if tp + fp else 1.0,
-        "recall": float(Fraction(tp, tp + fn)) if tp + fn else 1.0,
+        # Case §05: with a zero denominator P or R is 0. F1 has its own empty-and-empty rule.
+        "precision": float(Fraction(tp, tp + fp)) if tp + fp else 0.0,
+        "recall": float(Fraction(tp, tp + fn)) if tp + fn else 0.0,
         "f1": float(f1),
         "reward": terminal_reward(f1, inspection_steps),
         "inspection_steps": inspection_steps,
