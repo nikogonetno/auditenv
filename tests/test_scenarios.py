@@ -137,5 +137,30 @@ class C2(unittest.TestCase):
         self.assertTrue(allocation)
 
 
+class MidnightLookalike(unittest.TestCase):
+    def test_a_document_at_the_period_midnight_is_posted_on_the_company_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for seed, offsets in ((5, ["+05:00"]), (6, ["-05:00"]), (7, ["+00:00"])):
+                out = Path(tmp) / str(seed)
+                generate_episode(seed, {"errors": {}, "company_offsets": offsets}, str(out))
+                invoices, _, ledger, _, policy, _ = read(out)
+                provenance = json.loads((out / "private" / "provenance.json").read_text())
+                twins = [t for t in provenance["twins"] if t["kind"] == "midnight_utc"]
+                with self.subTest(offsets=offsets):
+                    self.assertTrue(twins)
+                    doc = invoices[twins[0]["records"][0].split("/")[1]]
+                    tz = dt.datetime.fromisoformat("2026-01-01T00:00:00" + policy["company_utc_offset"]).tzinfo
+                    start = dt.date.fromisoformat(policy["period"]["start_local"])
+                    end = dt.date.fromisoformat(policy["period"]["end_local"])
+                    when = dt.datetime.fromisoformat(doc["issued_at"])
+                    local = when.astimezone(tz).date()
+                    others = (when.date(), when.astimezone(dt.timezone.utc).date())
+                    self.assertTrue(any((start <= d <= end) != (start <= local <= end) for d in others))
+                    (row,) = [r for r in ledger.values() if r["invoice_id"] == doc["invoice_id"] and not r["payment_id"]
+                              and r["account"] in ("1210", "3310")]
+                    self.assertEqual(row["timestamp"][:10], local.isoformat())
+                    self.assertEqual(verify_episode(str(out)), [])
+
+
 if __name__ == "__main__":
     unittest.main()

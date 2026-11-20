@@ -670,6 +670,22 @@ def _c1_receipt(rng, world, customers, foreign_customers):
     return inv, pay
 
 
+def _midnight_lookalike(rng, world, customers, one_off, numbers):
+    """Midnight look-alike of the period error (docs/tasks/B_night_stage3.md item 5): a document within half an
+    hour of the midnight that ends the period, whose UTC date (or the vendor's own date) is in the other
+    period, posted correctly on the company-local date."""
+    if world.offset != "+00:00":
+        inv = _add_invoice(rng, world, "AR", rng.choice(customers), boundary_moment(rng, world), numbers)
+    else:
+        east = [c for c in one_off if int(c.offset[1:3]) > 0 and c.offset[0] == "+"]
+        if not east:
+            return
+        moment = dt.datetime.combine(world.period_end, dt.time(23, rng.randint(30, 59)), world.tz)
+        inv = _add_invoice(rng, world, "AP", rng.choice(east), moment, numbers)
+    _twin(world, "midnight_utc", "period_cutoff", [inv.key],
+          "the UTC or the issuer's date is in another period than the company-local date it is posted on")
+
+
 def entry_rate_differs(world, inv, tolerance=1):
     """True when the rate of the invoice's entry date gives a base amount more than two tolerances away
     from the rate of its document date (INV-20): the precondition of the rate_of_entry_date error."""
@@ -923,7 +939,7 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     anchors = anchors or {}
     low, high = config["documents"]
     neighbours = NEIGHBOUR_INVOICES + anchors.get("period_moves", 0)
-    lookalikes = (config["twins"][1] > 0) + (config["foreign_pct"][1] > 0)
+    lookalikes = 2 * (config["twins"][1] > 0) + (config["foreign_pct"][1] > 0)
     planned = (2 * anchors.get("full_receipts", 0) + anchors.get("vendor_bills", 0)
                + anchors.get("foreign_invoices", 0) + anchors.get("period_bills", 0) + 2 * neighbours + lookalikes
                + 2 * anchors.get("c1_receipts", 0) + 2 * anchors.get("c2_bills", 0))
@@ -1108,6 +1124,7 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
             inv.entered_at = dt.datetime.combine(period_end + dt.timedelta(days=1), dt.time(10, 0), world.tz)
         _twin(world, "late_entry", "period_cutoff", [inv.key],
               "entered after the period, posted on the document date")
+        _midnight_lookalike(rng, world, customers, one_off, numbers)
 
     unknown = rng.randint(0, 2)
     # A full-total payment after a partial one: legitimately part on 3510 although the amount equals the

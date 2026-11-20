@@ -333,8 +333,9 @@ def _changes(world, clean_book, final, book, ids, injections):
     return changes
 
 
-# Twin kinds listed first: the look-alikes of the rate and period errors (docs/tasks/B_stage2.md item 4).
-TWIN_PRIORITY = ("weekend_document", "late_entry")
+# Twin kinds listed first: the look-alikes of the rate and period errors (docs/tasks/B_stage2.md item 4,
+# B_night_stage3.md item 5).
+TWIN_PRIORITY = ("weekend_document", "late_entry", "midnight_utc")
 
 
 def _twins(rng, config, final, ids, targets):
