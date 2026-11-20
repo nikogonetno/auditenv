@@ -36,6 +36,8 @@ FALSE_ON_MINI = {
     ("payment_allocation", ("invoice/RRH8VY", "payment/AM952T")),
     # midnight in UTC: 21:10 +02:00 on 30 September is already 1 October for the company
     ("period_cutoff", ("ledger/TA1NB3",)),
+    # weekend document: Saturday 26 September takes Friday's rate, the rule takes Monday's quote
+    ("fx_rate", ("ledger/A35WK1",)),
 }
 # C1: the payment's UTC date is inside September, its company-local date is not.
 MISSED_ON_MINI = {("period_cutoff", ("ledger/Z3H7BB",))}
@@ -150,8 +152,8 @@ class Grade(ReconcileCase):
     def test_grade_on_the_test_book(self):
         """Observed on mini_v03: 7 TP, 3 FP, 1 FN after 5 reads, reward 2·7/9 − 1 − 0.002·5."""
         entry, _, _ = run(self.mini)
-        self.assertEqual((entry["tp"], entry["fp"], entry["fn"], entry["inspection_steps"]), (7, 3, 1, 5))
-        self.assertEqual(entry["reward"], float(2 * Fraction(7, 9) - 1 - Fraction(2, 1000) * 5))
+        self.assertEqual((entry["tp"], entry["fp"], entry["fn"], entry["inspection_steps"]), (7, 4, 1, 5))
+        self.assertEqual(entry["reward"], float(2 * Fraction(14, 19) - 1 - Fraction(2, 1000) * 5))
 
     def test_falls_for_correct_look_alike_records(self):
         _, _, rows = run(self.mini)
@@ -206,15 +208,26 @@ class Rules(unittest.TestCase):
             "type": "fx_rate", "affected_ids": ["ledger/R1"], "claimed_amount_minor": 1, "currency": "KZT",
             "evidence_ids": ["invoice/INV1", "ledger/R1", "fx/FX1"], "explanation": found[0]["explanation"]}])
 
-    def test_rate_takes_no_fallback_for_a_day_without_a_quote(self):
-        """A Saturday invoice has no fx row on its date: the naive rule skips it rather than look back."""
-        found = reconcile(manifest(), tables(
+    def saturday(self, *quotes):
+        """A Saturday 26 September USD bill booked at Friday's rate, with the given (date, rate, fx_id) quotes."""
+        return reconcile(manifest(), tables(
             invoices=[invoice("INV1", issued_at="2026-09-26T09:00:00+05:00", currency="USD", total=100)],
             ledger=[row("R1", "3310", 51264, invoice_id="INV1", timestamp="2026-09-26T12:00:00+05:00",
                         doc_currency="USD", doc_amount=100, rate="512.64")],
-            fx=[{"date": "2026-09-25", "source_currency": "USD", "target_currency": "KZT", "rate": "512.64",
-                 "fx_id": "FX1"}]))
-        self.assertEqual(found, [])
+            fx=[{"date": d, "source_currency": "USD", "target_currency": "KZT", "rate": r, "fx_id": i}
+                for d, r, i in quotes]))
+
+    def test_rate_takes_the_next_quote_for_a_day_without_one(self):
+        """The naive rule reads «the rate of the document date» and, on a Saturday, takes Monday's quote, not
+        Friday's as the policy asks: the weekend look-alike fools it (docs/tasks/B_stage2.md item 4)."""
+        found = self.saturday(("2026-09-25", "512.64", "FRI"), ("2026-09-28", "515.00", "MON"))
+        self.assertEqual([(f["type"], f["claimed_amount_minor"], f["evidence_ids"]) for f in found],
+                         [("fx_rate", 236, ["invoice/INV1", "ledger/R1", "fx/MON"])])
+
+    def test_rate_looks_at_most_a_week_ahead(self):
+        self.assertEqual(self.saturday(("2026-09-25", "512.64", "FRI"), ("2026-10-04", "515.00", "LATE")), [])
+        self.assertEqual(self.saturday(("2026-09-25", "512.64", "FRI")), [])
+        self.assertEqual(len(self.saturday(("2026-10-03", "515.00", "WEEK"))), 1)
 
     def test_period_uses_the_utc_date_of_the_document(self):
         """00:20 +05:00 on 1 October is 30 September in UTC: posted on 1 October, it is flagged."""
@@ -260,7 +273,7 @@ class Registration(unittest.TestCase):
                                "--mode", "eval"], capture_output=True, text=True, cwd=REPO_ROOT, env=env, timeout=120)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         report = json.loads(proc.stdout)
-        self.assertEqual((report["policy"], report["tp"], report["fp"], report["fn"]), ("reconcile", 7, 3, 1))
+        self.assertEqual((report["policy"], report["tp"], report["fp"], report["fn"]), ("reconcile", 7, 4, 1))
 
 
 if __name__ == "__main__":

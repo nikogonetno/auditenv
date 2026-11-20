@@ -333,9 +333,18 @@ def _changes(world, clean_book, final, book, ids, injections):
     return changes
 
 
-def _twins(final, ids, targets):
-    """Correct records that look like an error to a naive rule (domain spec A, «Корректные двойники»)."""
-    found = [dict(t) for t in final.twins]
+# Twin kinds listed first: the look-alikes of the rate and period errors (docs/tasks/B_stage2.md item 4).
+TWIN_PRIORITY = ("weekend_document", "late_entry")
+
+
+def _twins(rng, config, final, ids, targets):
+    """(twins, other look-alikes). Correct records that look like an error to a naive rule (domain spec A,
+    «Корректные двойники»). The config's twins range sets how many are listed with their distinguishing
+    feature, taken kind by kind, the rate and period look-alikes first; the rest of the natural
+    look-alikes in the book are only counted by kind."""
+    found = {}
+    for twin in final.twins:
+        found.setdefault((twin["kind"], tuple(twin["records"])), dict(twin))
     tz = final.tz
     for doc in [*final.invoices.values(), *final.payments.values()]:
         if doc.key in targets:
@@ -344,21 +353,33 @@ def _twins(final, ids, targets):
         local = final.event_date(doc)
         in_period = final.period_start <= local <= final.period_end
         if doc.currency != BASE and not final.rates.is_business(local):
-            found.append({"kind": "weekend_document", "mimics": "fx_rate", "records": [doc.key],
-                          "feature": "dated on a non-business day, rate of the previous business day by the policy"})
+            found.setdefault(("weekend_document", (doc.key,)), {
+                "kind": "weekend_document", "mimics": "fx_rate", "records": [doc.key],
+                "feature": "dated on a non-business day, rate of the previous business day by the policy"})
         others = (when.date(), when.astimezone(dt.timezone.utc).date())   # issuer's and UTC calendar date
         if any((final.period_start <= day <= final.period_end) != in_period for day in others):
-            found.append({"kind": "midnight_utc", "mimics": "period_cutoff", "records": [doc.key],
-                          "feature": "the issuer or UTC date is in another period than the company-local date"})
+            found.setdefault(("midnight_utc", (doc.key,)), {
+                "kind": "midnight_utc", "mimics": "period_cutoff", "records": [doc.key],
+                "feature": "the issuer or UTC date is in another period than the company-local date"})
         if in_period and doc.entered_at.astimezone(tz).date() > final.period_end:
-            found.append({"kind": "late_entry", "mimics": "period_cutoff", "records": [doc.key],
-                          "feature": "entered after the period, posted on the document date"})
+            found.setdefault(("late_entry", (doc.key,)), {
+                "kind": "late_entry", "mimics": "period_cutoff", "records": [doc.key],
+                "feature": "entered after the period, posted on the document date"})
+    by_kind = {}
+    for key in sorted(found):
+        by_kind.setdefault(key[0], []).append(found[key])
+    order = [k for k in TWIN_PRIORITY if k in by_kind] + sorted(k for k in by_kind if k not in TWIN_PRIORITY)
+    wanted, chosen = rng.randint(*config["twins"]), []
+    while len(chosen) < wanted and any(by_kind[k] for k in order):
+        for kind in order:
+            if by_kind[kind] and len(chosen) < wanted:
+                chosen.append(by_kind[kind].pop(rng.randrange(len(by_kind[kind]))))
     out = []
-    for n, twin in enumerate(sorted(found, key=lambda t: (t["kind"], t["records"])), 1):
+    for n, twin in enumerate(sorted(chosen, key=lambda t: (t["kind"], t["records"])), 1):
         out.append({"twin_id": f"TW-{n:02d}", "kind": twin["kind"], "mimics": twin["mimics"],
                     "records": sorted(ids.ref(k) for k in twin["records"]),
                     "distinguishing_feature": twin["feature"]})
-    return out
+    return out, {kind: len(rest) for kind, rest in sorted(by_kind.items()) if rest}
 
 
 # ---------------------------------------------------------------- output
@@ -398,6 +419,7 @@ def _render(rng, seed, config, world, clean_book, final, book, injections):
     truth, issue_ids = _truth(final, book, injections, ids, text)
     changes = _changes(world, clean_book, final, book, ids, injections)
     targets = set().union(*(inj.docs for inj in injections)) if injections else set()
+    twins, lookalikes = _twins(rng, config, final, ids, targets)
     provenance = {
         "schema_version": SCHEMA_VERSION,
         "seed": seed,
@@ -409,6 +431,7 @@ def _render(rng, seed, config, world, clean_book, final, book, injections):
         "injections": [{"order": n, "injection_id": f"INJ-{n:02d}", "scenario_id": inj.scenario,
                         "variant": inj.variant, "root_cause": inj.cause, "issue_ids": sorted(issue_ids[n - 1]),
                         "changes": changes[n - 1]} for n, inj in enumerate(injections, 1)],
-        "twins": _twins(final, ids, targets),
+        "twins": twins,
+        "other_lookalikes": lookalikes,
     }
     return {**public, "private/truth.json": _json(truth), "private/provenance.json": _json(provenance)}

@@ -2,14 +2,14 @@
 which documents it touched and which truth issues it caused, in internal keys.
 
 Variants follow docs/DOMAIN_SPEC_A.md. Stage 1: duplicate_invoice (same_vendor_ref_reformatted) and
-payment_allocation (partial_allocation). A record is the target of one injection at most, and never a
-record of a twin. Amounts and evidence are computed later from the final book (auditenv/generate.py),
+payment_allocation (partial_allocation). Stage 2: fx_rate (rate_of_entry_date) and period_cutoff
+(pulled_into_period). A record is the target of one injection at most, and never a record of a twin. Amounts and evidence are computed later from the final book (auditenv/generate.py),
 so the order of injections never changes truth.
 """
 from dataclasses import dataclass, field
 
 from ..config import ISSUE_TYPES
-from . import allocation, duplicate
+from . import allocation, duplicate, period, rate
 
 
 @dataclass
@@ -34,10 +34,14 @@ class Plan:
     anchors: dict = field(default_factory=dict)
 
 
-# type -> (module, documents it adds, anchors it needs)
+# type -> (module, documents it adds, anchors it needs). Anchors are ordinary clean records built first
+# (auditenv/world.py build_world); period_moves adds one real neighbour invoice per side of the period,
+# because the moved document no longer counts for INV-03.
 INJECTORS = {
     "duplicate_invoice": (duplicate, 1, {"vendor_bills": 1}),
     "payment_allocation": (allocation, 0, {"full_receipts": 1}),
+    "fx_rate": (rate, 0, {"foreign_invoices": 1}),
+    "period_cutoff": (period, 0, {"period_bills": 1, "period_moves": 1}),
 }
 
 
@@ -69,8 +73,10 @@ def inject_errors(rng, world, config):
     injections = []
     for kind in ISSUE_TYPES:
         module = INJECTORS.get(kind, (None,))[0]
+        # Anchors built for another error type are off limits, so capacity never depends on the seed.
+        others = {key for key, owner in world.anchors.items() if owner != kind}
         for _ in range(config["errors"][kind]):
-            variant, cause, issues, docs = module.inject(rng, world, used)
+            variant, cause, issues, docs = module.inject(rng, world, used | others)
             used.update(docs)
             injections.append(Injection(variant, cause, [Issue(kind, tuple(sorted(a))) for a in issues], set(docs)))
     return injections

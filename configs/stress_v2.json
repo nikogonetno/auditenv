@@ -1,0 +1,12 @@
+{
+  "comment": "Configs the stress test cycles through, seed by seed (docs/tasks/B_stage2.md item 7). Stage 2: the default config with one error of each type, rate only, period only, a clean company, 12 errors of all four types, and the two stage-1 configs. Supersedes stress_v1 (stage 1 only). Extend with C1 and C2 at stage 3.",
+  "configs": [
+    {},
+    {"errors": {"fx_rate": 1}},
+    {"errors": {"period_cutoff": 1}},
+    {"errors": {}},
+    {"errors": {"duplicate_invoice": 3, "payment_allocation": 3, "fx_rate": 3, "period_cutoff": 3}},
+    {"errors": {"duplicate_invoice": 1, "payment_allocation": 1}},
+    {"errors": {"duplicate_invoice": 2, "payment_allocation": 1}}
+  ]
+}

@@ -299,6 +299,7 @@ class World:
     payments: dict                # key -> Payment, in creation order
     twins: list = field(default_factory=list)   # {kind, mimics, records, feature}
     next_key: dict = field(default_factory=dict)
+    anchors: dict = field(default_factory=dict)  # record key -> the error type it was built for
 
     @property
     def tz(self):
@@ -617,6 +618,16 @@ def _amount_lines(rng, world, currency, descriptions, fixed_total=None):
     return lines
 
 
+def entry_rate_differs(world, inv, tolerance=1):
+    """True when the rate of the invoice's entry date gives a base amount more than two tolerances away
+    from the rate of its document date (INV-20): the precondition of the rate_of_entry_date error."""
+    if inv.currency == BASE:
+        return False
+    right = world.rates.rate(inv.currency, world.event_date(inv))
+    wrong = world.rates.rate(inv.currency, world.local_date(inv.entered_at))
+    return abs(conv(inv.total_minor, wrong) - conv(inv.total_minor, right)) > 2 * tolerance
+
+
 def _part(rng, total, low_pct, high_pct, currency):
     """A share of `total` strictly between 0 and total: whole tenge in KZT, any minor amount otherwise."""
     part = total * rng.randint(low_pct, high_pct) // 100
@@ -810,14 +821,18 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     """The clean company history for a normalized config.
 
     `reserved_documents` are left for the injectors (a duplicate adds a bill). `anchors` asks for
-    records an error needs, {"full_receipts": n, "vendor_bills": n}: they are ordinary clean records,
-    created first so that every requested error has a place. Whether a config can hold its errors
-    depends on the config only, never on the seed (SPEC §4.4).
+    records the errors need: they are ordinary clean records, created first so that every requested
+    error has a place. full_receipts: customer invoices paid in full; vendor_bills: one-off bills;
+    foreign_invoices: foreign-currency invoices whose entry date has another rate; period_bills:
+    base-currency bills of the next month's first days; period_moves: extra neighbour invoices per side.
+    Whether a config can hold its errors depends on the config only, never on the seed (SPEC §4.4).
     """
     anchors = anchors or {}
     low, high = config["documents"]
     neighbours = NEIGHBOUR_INVOICES + anchors.get("period_moves", 0)
-    planned = 2 * anchors.get("full_receipts", 0) + anchors.get("vendor_bills", 0) + 2 * neighbours
+    lookalikes = (1 + (config["foreign_pct"][1] > 0)) if config["twins"][1] else 0
+    planned = (2 * anchors.get("full_receipts", 0) + anchors.get("vendor_bills", 0)
+               + anchors.get("foreign_invoices", 0) + anchors.get("period_bills", 0) + 2 * neighbours + lookalikes)
     if high < planned + reserved_documents:
         raise ValueError(f"config: documents {low}-{high} cannot hold the requested errors, "
                          f"they need at least {planned + reserved_documents}")
@@ -859,6 +874,25 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     monthly_vendors = [c for c in suppliers if VENDOR_KINDS[c.kind][2]]
     one_off = [c for c in suppliers if not VENDOR_KINDS[c.kind][2]]
     numbers = _Numbers(rng)
+    # Conditions the errors and twins need that the drawn shares may lack: an occasional foreign
+    # customer, an occasional base-currency vendor. They trade like the others, so they do not stand
+    # out as holders of anchors only.
+    taken = {c.name for c in world.counterparties.values()}
+    foreign_customers = [c for c in customers if c.currency != BASE]
+    if not foreign_customers and config["foreign_pct"][1] > 0 and (anchors.get("foreign_invoices") or config["twins"][1]):
+        cp = Counterparty(world.new_key("C"), rng.choice([n for n in CUSTOMER_NAMES if n not in taken]), "customer",
+                          rng.choice(COUNTERPARTY_OFFSETS), rng.choice(FOREIGN))
+        world.counterparties[cp.key] = cp
+        foreign_customers = [cp]
+        customers.append(cp)
+    base_vendors = [c for c in one_off if c.currency == BASE]
+    if not base_vendors and anchors.get("period_bills"):
+        name, prefix, fits = rng.choice([v for v in ONE_OFF_NAMES if v[0] not in taken])
+        cp = Counterparty(world.new_key("C"), name, "vendor", rng.choice(COUNTERPARTY_OFFSETS), BASE, rng.choice(fits),
+                          prefix, rng.choice(sorted(REF_STYLES)), rng.randint(10, 900))
+        world.counterparties[cp.key] = cp
+        base_vendors = [cp]
+        one_off.append(cp)
 
     def room():
         return target - world.documents()
@@ -894,16 +928,32 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
     def new_ap(cp, day):
         return _add_invoice(rng, world, "AP", cp, local_time(rng, world, day), numbers)
 
-    # Records the requested errors need, then real rows of both neighbouring periods (INV-03).
+    # Records the requested errors need, then real rows of both neighbouring periods (INV-03). Each
+    # anchor is reserved for its error type, so another injector cannot use it up (seed-independent).
     for _ in range(anchors.get("full_receipts", 0)):
         cp = rng.choice(customers)
         inv = new_ar(cp, window_day(last=window_end - dt.timedelta(days=15)))
-        if not _pay_customer(rng, world, inv, 1, "on_time"):
+        pays = _pay_customer(rng, world, inv, 1, "on_time")
+        if not pays:
             day = world.event_date(inv) + dt.timedelta(days=rng.randint(1, 10))
-            _add_payment(rng, world, "in", cp, local_time(rng, world, day), inv.currency, inv.total_minor,
-                         _ar_remittance(rng, [inv.number], cp), [(inv.key, inv.total_minor)])
+            pays = [_add_payment(rng, world, "in", cp, local_time(rng, world, day), inv.currency, inv.total_minor,
+                                 _ar_remittance(rng, [inv.number], cp), [(inv.key, inv.total_minor)])]
+        world.anchors.update({inv.key: "payment_allocation", pays[0].key: "payment_allocation"})
     for _ in range(anchors.get("vendor_bills", 0)):
-        new_ap(rng.choice(one_off), window_day())
+        world.anchors[new_ap(rng.choice(one_off), window_day()).key] = "duplicate_invoice"
+    for _ in range(anchors.get("foreign_invoices", 0)):
+        inv = new_ar(rng.choice(foreign_customers), window_day())
+        for _ in range(500):                     # redraw until a business day whose entry date has another rate
+            if rates.is_business(world.event_date(inv)) and entry_rate_differs(world, inv):
+                break
+            local = local_time(rng, world, window_day())
+            inv.issued_at, inv.entered_at = local, entered_time(rng, world, local)
+            inv.service_from = inv.service_to = local.date().isoformat()
+        world.anchors[inv.key] = "fx_rate"
+    for _ in range(anchors.get("period_bills", 0)):
+        day = period_end + dt.timedelta(days=rng.randint(1, 3))
+        inv = _add_invoice(rng, world, "AP", rng.choice(base_vendors), local_time(rng, world, day, 0))
+        world.anchors[inv.key] = "period_cutoff"
     for first, last in ((window_start, period_start - dt.timedelta(days=1)), (period_end + dt.timedelta(days=1), window_end)):
         for _ in range(neighbours):
             day = window_day(first, last)
@@ -911,6 +961,28 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
                 new_ar(rng.choice(customers), day)
             else:
                 new_ap(rng.choice(one_off), day)
+
+    # Look-alikes of the rate and period errors (docs/tasks/B_stage2.md item 4), in clean and erroneous
+    # books alike and counted in `planned`, so small books hold them too. A foreign invoice dated on a
+    # non-business day takes the previous business day's rate; an invoice of the period's last days
+    # entered in the next month is posted on its own date.
+    if config["twins"][1]:
+        days = [period_start + dt.timedelta(days=n) for n in range((period_end - period_start).days + 1)]
+        off_days = [d for d in days if not rates.is_business(d)]
+        if foreign_customers and off_days:
+            inv = new_ar(rng.choice(foreign_customers), rng.choice(off_days))
+            _twin(world, "weekend_document", "fx_rate", [inv.key],
+                  "dated on a non-business day, rate of the previous business day by the policy")
+        inv = new_ar(rng.choice(customers), period_end - dt.timedelta(days=rng.randint(0, 2)))
+        event = inv.issued_at.astimezone(world.tz)
+        for _ in range(200):                 # the clean entry delay, drawn until it lands in the next month
+            if world.local_date(inv.entered_at) > period_end:
+                break
+            inv.entered_at = entered_time(rng, world, event)
+        else:
+            inv.entered_at = dt.datetime.combine(period_end + dt.timedelta(days=1), dt.time(10, 0), world.tz)
+        _twin(world, "late_entry", "period_cutoff", [inv.key],
+              "entered after the period, posted on the document date")
 
     unknown = rng.randint(0, 2)
     # A full-total payment after a partial one: legitimately part on 3510 although the amount equals the
@@ -950,8 +1022,29 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
                            rng.choice(UNKNOWN_TEXTS), [], raw_name=rng.choice(UNKNOWN_PAYERS))
         _twin(world, "unidentified_receipt", "payment_allocation", [pay.key],
               "no reference in the remittance, amount matches no open item")
+    _first_in_sequence(world)
+    # An ERP allocates a payment to an invoice only once the invoice is keyed.
+    for pay in world.payments.values():
+        keyed = [world.invoices[k].entered_at for k, _ in pay.alloc]
+        if keyed and pay.entered_at <= max(keyed):
+            pay.entered_at = max(keyed) + dt.timedelta(minutes=rng.randint(10, 240))
     _number_documents(rng, world, numbers.ar, numbers.po)
     return world
+
+
+def _first_in_sequence(world):
+    """Period anchors come first among their vendor's bills after the period end, so a pulled bill keeps
+    its vendor's numbering in order (domain spec A, scenario 4 §8). Anchors have no purchase order."""
+    start = dt.datetime.combine(world.period_end + dt.timedelta(days=1), dt.time(), world.tz)
+    for key in sorted(k for k, t in world.anchors.items() if t == "period_cutoff"):
+        bill = world.invoices[key]
+        others = [i.issued_at for i in world.invoices.values()
+                  if i.cp == bill.cp and world.anchors.get(i.key) != "period_cutoff" and i.issued_at >= start]
+        if others and min(others) <= bill.issued_at:
+            low = start + dt.timedelta(hours=7) if min(others) > start + dt.timedelta(hours=7, minutes=30) else start
+            moved = low + (min(others) - low) / 2
+            bill.issued_at = moved.replace(second=0, microsecond=0).astimezone(bill.issued_at.tzinfo)
+            bill.service_from = bill.service_to = world.local_date(bill.issued_at).isoformat()
 
 
 def _number_documents(rng, world, first_ar, first_po):

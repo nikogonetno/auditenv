@@ -1,6 +1,6 @@
 """Stress test of the generator, verifier and oracle (docs/tasks/B_next.md item 7).
 
-    python3 scripts/stress.py --n 300 [--start 0] [--configs configs/stress_v1.json] [--generator module:function]
+    python3 scripts/stress.py --n 300 [--start 0] [--configs configs/stress_v2.json] [--generator module:function]
 
 For each seed it generates an episode, then checks:
   load      the episode loads and its truth parses (auditenv.episode, auditenv.grader)
@@ -130,7 +130,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--n", type=int, default=5)
     parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--configs", default=str(ROOT / "configs" / "stress_v1.json"))
+    parser.add_argument("--configs", default=str(ROOT / "configs" / "stress_v2.json"))
     parser.add_argument("--generator", default=DEFAULT_GENERATOR, help="module:function, default A's generator")
     parser.add_argument("--no-strict-volume", action="store_true",
                         help="skip the INV-03 volume check: only for small test books, never for generated episodes")
