@@ -210,6 +210,55 @@ class VerifyMini(unittest.TestCase):
         self.edit_csv("ledger.csv", ("row_id", "V2CMCR"), lambda r: r.update(debit_minor="1"))
         self.assertIn("INV-01", self.codes())
 
+    # --- bookkeeping consistency ---------------------------------------------------------------
+
+    def test_row_base_not_matching_its_rate_is_inv04(self):
+        # A revenue row is not a carrying row, so only the rate arithmetic can catch it.
+        self.edit_csv("ledger.csv", ("row_id", "XEVXN8"), lambda r: r.update(exchange_rate="513.08"))
+        self.assertEqual(self.codes(), {"INV-04"})
+
+    def test_fx_row_on_the_wrong_side_is_inv05(self):
+        self.edit_csv("ledger.csv", ("row_id", "V2CMCR"), lambda r: r.update(account="7430"))
+        self.assertEqual(self.codes(), {"INV-05"})
+
+    def test_line_items_not_summing_to_total_is_inv06(self):
+        def change(invoice):
+            invoice["line_items"][0].update(qty=2, unit_price_minor=60000)
+            invoice["line_items"][0]["amount_minor"] = 110000
+        self.edit_jsonl("invoices.jsonl", ("invoice_id", "G0QJMF"), change)
+        self.assertEqual(self.codes(), {"INV-06"})
+
+    def test_carrying_row_not_copying_its_document_is_inv08(self):
+        self.edit_jsonl("invoices.jsonl", ("invoice_id", "P18WZP"), lambda r: r.update(entity_id="5N6CKK"))
+        self.assertIn("INV-08", self.codes())
+
+    def test_refs_not_following_remittance_is_inv08(self):
+        # The detector reads invoice_refs, so they must say what the remittance text says.
+        self.edit_jsonl("payments.jsonl", ("payment_id", "GDSY3H"), lambda r: r.update(remittance_info="S-2026-0446"))
+        self.assertEqual(self.codes(), {"INV-08"})
+        [detail] = self.details("INV-08")
+        self.assertIn("39487B", detail)
+
+    def test_reference_needs_a_boundary(self):
+        # S-2026-04150 is not S-2026-0415.
+        self.edit_jsonl("payments.jsonl", ("payment_id", "WHD1JM"), lambda r: r.update(remittance_info="S-2026-04150"))
+        self.assertTrue(any("WHD1JM" in d and "None" in d for d in self.details("INV-08")))
+
+    def test_receipt_not_split_into_cleared_and_unapplied_is_inv10(self):
+        self.edit_jsonl("payments.jsonl", ("payment_id", "GDSY3H"), lambda r: r.update(amount_minor=31550001))
+        self.assertIn("INV-10", self.codes())
+
+    def test_payment_before_invoice_is_inv12(self):
+        self.edit_jsonl("invoices.jsonl", ("invoice_id", "EY31ZP"),
+                        lambda r: r.update(issued_at="2026-09-22T10:00:00+05:00"))
+        self.assertIn("INV-12", self.codes())
+
+    def test_entry_on_two_dates_is_reported(self):
+        self.edit_csv("ledger.csv", ("row_id", "2NMKY7"), lambda r: r.update(timestamp="2026-10-01T12:00:00+05:00"))
+        self.assertEqual(self.codes(), {"INV-13"})
+        [detail] = self.details("INV-13")
+        self.assertIn("A12BT6", detail)
+
     # --- INV-20 and D-4: truth itself -----------------------------------------------------------
 
     def test_amount_not_above_two_tolerances_is_inv20(self):
