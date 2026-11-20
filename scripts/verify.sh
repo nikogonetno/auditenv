@@ -14,7 +14,7 @@ echo "== unit tests"
 echo "== QA detector on golden (fails only on critical findings)"
 "$PY" -I qa/qa_golden.py tests/fixtures/golden_v0.1/episode
 
-echo "== stress, 5 seeds (SKIP until the generator lands; full run: make stress N=300)"
+echo "== stress, 5 seeds of the generator, verifier V and oracle (full run: make stress N=300)"
 "$PY" scripts/stress.py --n 5
 
 echo "verify: OK"

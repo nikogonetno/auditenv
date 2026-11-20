@@ -46,9 +46,10 @@ class Stress(unittest.TestCase):
         self.assertEqual((code, summary["failed"]), (1, 2))
         self.assertTrue(rows[0]["failures"][0].startswith("generate: ValueError"))
 
-    def test_missing_generator_is_a_skip(self):
+    def test_missing_generator_fails(self):
+        # Since stage 1 of the generator is in main, a missing generator must break make verify (PM, 21.11).
         code, rows, summary = stress("--n", "3", "--generator", "tests.no_such_module:generate_episode")
-        self.assertEqual((code, rows, summary["stress"]), (0, [], "SKIP"))
+        self.assertEqual((code, rows, summary["stress"]), (1, [], "FAIL"))
 
 
 if __name__ == "__main__":

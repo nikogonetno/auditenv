@@ -10,7 +10,8 @@ For each seed it generates an episode, then checks:
   determinism  two generations in fresh processes with PYTHONHASHSEED 0 and 1 give the same sha256 of every file
 
 Seeds cycle through the configs of --configs. Prints one JSON line per seed and a summary line; exit 1 on
-any failure. Without a generator module it prints SKIP and exits 0, so make verify stays green until A lands.
+any failure. A missing generator module is a failure too: since stage 1 of the generator is in main, a green
+make verify must mean the generator works (PM, 21.11).
 """
 import argparse
 import hashlib
@@ -137,8 +138,8 @@ def main(argv=None):
 
     generator = load_generator(args.generator)
     if generator is None:
-        print(json.dumps({"stress": "SKIP", "reason": f"{args.generator} not available yet"}))
-        return 0
+        print(json.dumps({"stress": "FAIL", "reason": f"{args.generator} cannot be imported"}))
+        return 1
     with open(args.configs, encoding="utf-8") as f:
         configs = [normalize_config(c) for c in json.load(f)["configs"]]
     verifier = load_verifier()
