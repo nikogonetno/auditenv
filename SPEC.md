@@ -205,7 +205,7 @@
   После эпизода все процессы этого пользователя убиваются. Без root (машина разработчика) политика работает от того же пользователя, и `--sandbox required` в этом случае отказывается запускаться. Тесты песочницы `tests/test_sandbox.py` идут от root в Docker-шаге CI.
 - **Oracle** работает внутри процесса оценщика (кейс §06) и берёт truth из среды.
 - **Траектории** (кейс §09): строки JSON с ключами `episode_id, step, action, observation, reward, terminated, truncated`. Шаг 0 это reset. Нераспознанная строка записывается как `{"bad_message": код}`, действие больше 64 КБ как размер и sha256. U+2028, U+2029 и U+0085 экранируются. Траектории oracle содержат правильный ответ в действиях, поэтому для закрытых эпизодов их не публикуем.
-- **CLI:** `python -m auditenv.run --policy {random,flag_all,oracle} --episode-dir DIR [--mode eval] [--sandbox auto|required|off] [--trajectories PATH] [--grader-log PATH]`. Демо: `make demo`.
+- **CLI:** `python -m auditenv.run --policy {random,reconcile,flag_all,oracle} --episode-dir DIR [--mode eval] [--sandbox auto|required|off] [--trajectories PATH] [--grader-log PATH]`. Демо: `make demo`.
 
 ## 5. Оценка
 

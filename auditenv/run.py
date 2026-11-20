@@ -1,10 +1,10 @@
 """Run one baseline policy on one episode and report the grade (case §06, §09).
 
-    python -m auditenv.run --policy {random,flag_all,oracle} --episode-dir DIR
+    python -m auditenv.run --policy {random,reconcile,flag_all,oracle} --episode-dir DIR
                            [--mode train|eval] [--seed N] [--policy-seed N] [--time-limit S]
                            [--trajectories PATH] [--grader-log PATH]
 
-random and flag_all run as separate processes (`python3 -m policies.<name> <seed>`) and see only
+random, reconcile and flag_all run as separate processes (`python3 -m policies.<name> <seed>`) and see only
 JSON observations. oracle is grader-side (case §06) and runs in-process with truth from the env.
 --seed goes to env.reset only; the policy gets its own --policy-seed, because the agent must never
 see the episode seed (case §03).
@@ -18,7 +18,7 @@ import sys
 from .env import MODES, AuditEnv
 from .runner import SANDBOX_MODES, TIME_LIMIT_S, encode_line, run_inprocess_episode, run_subprocess_episode
 
-SUBPROCESS_POLICIES = {"random": "policies.random_policy", "flag_all": "policies.flag_all"}
+SUBPROCESS_POLICIES = {"random": "policies.random_policy", "reconcile": "policies.reconcile", "flag_all": "policies.flag_all"}
 POLICIES = (*SUBPROCESS_POLICIES, "oracle")
 REPORT_KEYS = ("tp", "fp", "fn", "precision", "recall", "f1", "reward")
 
