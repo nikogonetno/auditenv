@@ -28,11 +28,10 @@ jobs:
       # The closed jury run of README («Закрытый прогон жюри»), word for word, on a hidden set of two episodes.
       - name: closed run of a hidden episode set in Docker under auditpolicy
         run: |
-          mkdir -m 755 policy && cp examples/my_policy.py policy/
+          mkdir -m 755 policy && cp examples/my_policy.py policy/ && chmod -R a+rX policy
           mkdir -m 700 jury_in jury_out
           python3 -c 'import json; s = json.load(open("configs/dev_v2.json")); json.dump({"version": "ci_pair", "split": "ci", "episodes": s["episodes"][:2]}, open("jury_in/hidden_set.json", "w"))'
           docker run --rm --network none -v "$PWD/policy:/policy:ro" -v "$PWD/jury_in:/in:ro" -v "$PWD/jury_out:/out" auditenv:dev python3 -m auditenv.run --policy-cmd "python3 /policy/my_policy.py" --config /in/hidden_set.json --mode eval --sandbox required --trajectories /out/trajectories.jsonl --grader-log /out/grader_log.jsonl | tee closed_run.jsonl
-          sudo chown -R "$(id -u):$(id -g)" jury_out
           python3 - <<'CHECK'
           import json
           lines = [json.loads(line) for line in open("closed_run.jsonl")]
@@ -43,5 +42,13 @@ jobs:
           seen = {json.loads(line)["episode_id"] for line in open("jury_out/trajectories.jsonl")}
           assert seen == {r["episode_id"] for r in episodes}, seen
           assert len(open("jury_out/grader_log.jsonl").read().splitlines()) == 2
-          print("closed run of the set: 2 episodes, trajectories and grader log in jury_out")
+          print("closed run of the set: 2 episodes, trajectories and grader log in jury_out, readable without sudo")
           CHECK
+          # The sandbox user (uid 10002, the policy) reads neither the hidden set nor the logs on these mounts.
+          for f in /in/hidden_set.json /out/trajectories.jsonl /out/grader_log.jsonl; do
+            if out=$(docker run --rm --network none --user 10002:10002 -v "$PWD/jury_in:/in:ro" -v "$PWD/jury_out:/out:ro" auditenv:dev python3 -c "open('$f').read()" 2>&1); then
+              echo "uid 10002 can read $f"; exit 1
+            fi
+            echo "$out" | grep -q PermissionError || { echo "unexpected failure for $f: $out"; exit 1; }
+          done
+          echo "uid 10002 reads neither the hidden set nor the logs"

@@ -23,7 +23,6 @@ carries the grade in eval mode too, with the code version and config_sha256 of t
 import argparse
 import io
 import json
-import math
 import os
 import shlex
 import shutil
@@ -126,35 +125,51 @@ def episode_config_sha256(config):
 
 
 def episode_set(data):
-    """[(seed, config)] of an episode set, or None when data is one generator config. ValueError if broken."""
+    """[(seed, config)] of an episode set, or None when data is one generator config. ValueError if broken.
+
+    Every item's config goes through normalize_config here, before any episode runs, so a bad item stops the
+    run with its number and nothing written (QA M5). version is required, split and comment are optional.
+    """
     if "episodes" not in data:
         return None
     unknown = sorted(set(data) - SET_KEYS)
     if unknown:
         raise ValueError(f"unknown episode set key: {unknown[0]}")
+    if type(data.get("version")) is not str or not data["version"]:
+        raise ValueError("an episode set needs a non-empty string version")
+    for key in ("split", "comment"):
+        if key in data and type(data[key]) is not str:
+            raise ValueError(f"episode set key {key} must be a string")
     items = data["episodes"]
     if type(items) is not list or not items:
         raise ValueError("an episode set needs a non-empty list episodes")
     runs = []
-    for item in items:
+    for n, item in enumerate(items, 1):
         if (type(item) is not dict or set(item) != {"seed", "config"} or type(item["seed"]) is not int
                 or type(item["config"]) is not dict):
-            raise ValueError("every item of episodes must be {\"seed\": int, \"config\": object}")
+            raise ValueError(f"episode set item {n}: must be {{\"seed\": int, \"config\": object}}")
+        try:
+            normalize_config(item["config"])
+        except ValueError as exc:
+            raise ValueError(f"episode set item {n} (seed {item['seed']}): {exc}") from None
         runs.append((item["seed"], item["config"]))
-    if len({seed for seed, _ in runs}) != len(runs):
-        raise ValueError("an episode set repeats a seed")
+    seeds = [seed for seed, _ in runs]
+    if len(set(seeds)) != len(seeds):
+        repeated = next(seed for seed in seeds if seeds.count(seed) > 1)
+        raise ValueError(f"an episode set repeats seed {repeated}")
     return runs
 
 
 def plan_runs(args):
-    """([(seed, config)] to run in order, the set's {version, split} or None)."""
+    """([(seed, config)] to run in order, the set's {version, split, item number by seed} or None)."""
     if args.episode_dir:
         return [(0 if args.seed is None else args.seed, {"episode_dir": args.episode_dir})], None
     data = load_config(args.config)
     runs = episode_set(data)
     if runs is None:
         return [(0 if args.seed is None else args.seed, data)], None
-    info = {"version": data.get("version"), "split": data.get("split")}
+    info = {"version": data.get("version"), "split": data.get("split"),
+            "item": {seed: n for n, (seed, _) in enumerate(runs, 1)}}       # for error messages
     if args.seed is None:
         return runs, info
     chosen = [run for run in runs if run[0] == args.seed]
@@ -175,13 +190,19 @@ def submitted_findings(trajectory_text):
     return findings if isinstance(findings, list) else []
 
 
+def broken_submit_counts(findings, issues):
+    """(tp, fp, fn) of a findings.json with a broken structure (case §05: reward -1, nothing matched). Its
+    findings are false positives, at least one, so a broken empty answer on a clean company never counts as
+    the perfect empty answer (QA H1); every truth issue is missed. scripts/metrics.py uses the same rule."""
+    return 0, max(len(findings), 1), len(issues)
+
+
 def episode_counts(env, trajectory_text):
-    """(tp, fp, fn) of one episode. A findings.json with a broken structure matches nothing: its findings are
-    false positives and every truth issue is missed, as in scripts/metrics.py (case §05)."""
+    """(tp, fp, fn) of one episode, a broken submit counted by broken_submit_counts."""
     entry = env.grader_log[-1]
     if "tp" in entry:
         return entry["tp"], entry["fp"], entry["fn"]
-    return 0, len(submitted_findings(trajectory_text)), len(env._truth.get("issues") or [])  # grader side only
+    return broken_submit_counts(submitted_findings(trajectory_text), env._truth.get("issues") or [])  # grader side
 
 
 def set_summary(info, reports, counts):
@@ -193,8 +214,23 @@ def set_summary(info, reports, counts):
             "precision": float(Fraction(tp, tp + fp)) if tp + fp else 0.0,
             "recall": float(Fraction(tp, tp + fn)) if tp + fn else 0.0,
             "f1": float(f1_score(tp, fp, fn)),
-            "mean_reward": math.fsum(r["reward"] for r in reports) / len(reports),
-            "mean_steps": sum(r["steps"] for r in reports) / len(reports)}
+            # Rewards are exact fractions turned into floats by the grader; the mean is taken exactly (QA L14).
+            "mean_reward": float(sum(Fraction(r["reward"]).limit_denominator(10 ** 7) for r in reports) / len(reports)),
+            "mean_steps": float(Fraction(sum(r["steps"] for r in reports), len(reports)))}
+
+
+def hand_back(paths):
+    """Give log files to the owner of their folder when the runner is root (the Docker image), so the jury
+    reads trajectories and the grader log without sudo (QA L15). They stay 0600; never to the sandbox user."""
+    if os.name != "posix" or os.geteuid() != 0:
+        return
+    sandbox = sandbox_user()
+    for path in paths:
+        if not path or not os.path.isfile(path):
+            continue
+        folder = os.stat(os.path.dirname(os.path.abspath(path)))
+        if folder.st_uid != 0 and (sandbox is None or folder.st_uid != sandbox[0]):
+            os.chown(path, folder.st_uid, folder.st_gid)
 
 
 def load_config(text):
@@ -236,15 +272,17 @@ def main(argv=None):
     reports, counts = [], []
     try:
         for seed, config in runs:
+            where = f"episode set item {info['item'][seed]} (seed {seed}): " if info else ""
             env, text = AuditEnv(args.mode), io.StringIO()
             try:
                 result = run_policy(args.policy, env, seed, config, args.policy_seed, args.time_limit, text,
                                     args.sandbox, policy_cmd)
             except (ValueError, RuntimeError) as exc:  # broken config or episode directory, or no sandbox
-                print(f"auditenv.run: {exc}", file=sys.stderr)
+                print(f"auditenv.run: {where}{exc}", file=sys.stderr)
                 return 2
             except OSError as exc:  # the policy command failed to start, e.g. the sandbox user cannot run it
-                print(f"auditenv.run: cannot start the policy: {exc.strerror}: {exc.filename}", file=sys.stderr)
+                print(f"auditenv.run: {where}cannot start the policy: {exc.strerror}: {exc.filename}",
+                      file=sys.stderr)
                 return 2
             if trajectory is not None:
                 trajectory.write(text.getvalue())
@@ -263,6 +301,7 @@ def main(argv=None):
     finally:
         if trajectory is not None:
             trajectory.close()
+        hand_back([args.trajectories, args.grader_log])
     if info is not None and args.seed is None:
         sys.stdout.write(encode_line(set_summary(info, reports, counts)))
     return 0

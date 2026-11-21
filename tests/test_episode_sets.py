@@ -98,6 +98,44 @@ class EpisodeSets(unittest.TestCase):
         self.assertEqual((total["invalid"], total["tp"], total["fp"], total["fn"]), (2, 0, 2, issues))
         self.assertEqual((total["f1"], total["mean_reward"]), (0.0, -1.0))
 
+    def test_broken_submits_on_clean_companies_are_not_a_perfect_answer(self):
+        """QA H1: a broken empty submit must not look like the honest empty answer on a clean book."""
+        clean = {"version": "clean", "episodes": [{"seed": 1, "config": {"errors": {}}},
+                                                  {"seed": 2, "config": {"errors": {}}}]}
+        self.set_file.write_text(json.dumps(clean), encoding="utf-8")
+        policy = self.root / "broken.py"
+        policy.write_text("import json, sys\nsys.stdin.readline()\nprint(json.dumps({'action': 'submit', 'findings': "
+                          "{'episode_id': 'WRONG', 'findings': []}}), flush=True)\nsys.stdin.readline()\n",
+                          encoding="utf-8")
+        proc = run_cli("--policy-cmd", f"{sys.executable} {policy}", "--config", str(self.set_file), "--mode", "train",
+                       "--sandbox", "off")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        total = lines(proc.stdout)[-1]
+        self.assertEqual((total["invalid"], total["tp"], total["fp"], total["fn"]), (2, 0, 2, 0))
+        self.assertEqual((total["f1"], total["mean_reward"]), (0.0, -1.0))
+
+    def test_a_bad_item_stops_the_set_before_any_episode(self):
+        """QA M5 and L13: every item is checked first; the message names the item; nothing is written."""
+        traj = self.root / "t.jsonl"
+        for broken, message in (
+                ({**self.pair, "episodes": [*self.pair["episodes"], {"seed": 5, "config": {"errors": {"fraud": 1}}}]},
+                 "episode set item 3 (seed 5): unknown config.errors key: fraud"),
+                ({"episodes": self.pair["episodes"]}, "an episode set needs a non-empty string version"),
+                ({**self.pair, "split": 1}, "episode set key split must be a string")):
+            with self.subTest(message=message):
+                self.set_file.write_text(json.dumps(broken), encoding="utf-8")
+                proc = run_cli("--policy", "oracle", "--config", str(self.set_file), "--trajectories", str(traj))
+                self.assertEqual((proc.returncode, proc.stdout), (2, ""))
+                self.assertIn(message, proc.stderr)
+                self.assertFalse(traj.exists())
+
+    def test_the_mean_reward_is_exact(self):
+        """QA L14: no float noise such as 0.39999999999999997 for the rewards 0.1 and 0.7."""
+        from auditenv.run import set_summary
+        reports = [{"reward": 0.1, "steps": 3, "tp": 1}, {"reward": 0.7, "steps": 4, "tp": 1}]
+        total = set_summary({"version": "v", "split": None}, reports, [(1, 0, 0), (1, 0, 0)])
+        self.assertEqual((total["mean_reward"], total["mean_steps"]), (0.4, 3.5))
+
     def test_one_config_still_works_and_reports_its_hash(self):
         proc = run_cli("--policy", "oracle", "--config", "{}", "--seed", "7")
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -122,6 +160,7 @@ class EpisodeSets(unittest.TestCase):
         out.mkdir()
         os.chmod(hidden, 0o700)
         os.chmod(out, 0o755)                               # open: only the modes of the files keep the policy out
+        os.chown(out, 4242, 4242)                          # as a jury's folder: the runner hands the logs back
         set_file = hidden / "hidden_set.json"
         set_file.write_text(json.dumps(self.pair), encoding="utf-8")
         # umask 022 as in a jury's `docker run ... python3 -m auditenv.run`: the CLI's own umask 077 must hold.
@@ -135,6 +174,7 @@ class EpisodeSets(unittest.TestCase):
         uid, gid = sandbox_user()
         for path in (out / "trajectories.jsonl", out / "grader_log.jsonl"):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode) & 0o077, 0, path.name)
+            self.assertEqual((path.stat().st_uid, path.stat().st_gid), (4242, 4242), path.name)   # QA L15
         for path in (out / "trajectories.jsonl", out / "grader_log.jsonl", set_file):
             with self.subTest(path=path.name):
                 self.assertTrue(path.is_file())
