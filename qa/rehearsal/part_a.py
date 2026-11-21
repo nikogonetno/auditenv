@@ -1,11 +1,13 @@
 """Jury rehearsal, part A items 1-5 (docs/tasks/V_rehearsal.md; case §06, §10).
 
-    python3 qa/rehearsal/part_a.py [--steps build,policies,verify,paired,repro]
+    python3 qa/rehearsal/part_a.py [--steps build,policies,verify,rollback,paired,repro]
 
 build     the 20 episodes of qa/rehearsal/configs.json into runs/rehearsal/episodes (item 1)
 policies  random (fixed policy seed), reconcile, flag_all and oracle in eval mode through the CLI
           `python -m auditenv.run --config ... --seed ...`, as the jury runs hidden seeds (item 2)
 verify    the independent verifier V, strict, on every episode: INV-18 and the rest (item 3)
+rollback  the book before the errors (docs/tasks/V_rollback.md): provenance undone on a copy, strict V
+          with an empty truth on it, for these 20, their copies after transform, train and dev
 paired    10 repeat and 10 transform checks on these episodes (item 4)
 repro     sha256 of the files under PYTHONHASHSEED 0, 1, random and random again (item 5)
 
@@ -27,7 +29,7 @@ from common import (OUT, POLICIES, POLICY_SEED, ROOT, build, child_env, emit, ep
                     file_digests, oracle_findings, plan, run_child, run_cli, text_sha256, tree_digest,
                     truth_of, write_json)
 
-STEPS = ("build", "policies", "verify", "paired", "repro")
+STEPS = ("build", "policies", "verify", "rollback", "paired", "repro")
 PRIVATE_WORDS = re.compile(r"truth|provenance|inject|twin|scenario|issue_id", re.IGNORECASE)
 
 
@@ -154,6 +156,27 @@ def step_verify(entries):
                "problems": problems[:20], "problem_count": len(problems)}
         rows.append(row)
         emit(row)
+    return rows
+
+
+# ------------------------------------------------------------------------------ V_rollback.md
+def step_rollback(entries):
+    from auditenv.transform import permute_and_rename
+    from auditenv.verify.rollback import verify_rollback
+    targets = [("rehearsal", e["seed"], episode_dir(e["seed"])) for e in entries]
+    targets += [(d.parent.name, int(d.name), d) for d in sorted(ROOT.glob("episodes/*/[0-9]*")) if d.is_dir()]
+    rows = []
+    with tempfile.TemporaryDirectory(prefix="rehearsal-rollback-") as work:
+        for e in entries:
+            copy = Path(work) / f"t{e['seed']}"
+            permute_and_rename(str(episode_dir(e["seed"])), str(copy), 800001 + e["seed"])
+            targets.append(("transformed", e["seed"], copy))
+        for kind, seed, directory in targets:
+            problems = verify_rollback(str(directory), strict_volume=True)
+            row = {"step": "rollback", "kind": kind, "seed": seed, "ok": not problems,
+                   "problems": problems[:20], "problem_count": len(problems)}
+            rows.append(row)
+            emit(row)
     return rows
 
 
@@ -349,6 +372,13 @@ def main(argv=None):
         elif step == "verify":
             rows = step_verify(entries)
             summary = {"passed": sum(r["ok"] for r in rows), "total": len(rows)}
+        elif step == "rollback":
+            rows = step_rollback(entries)
+            kinds = sorted({r["kind"] for r in rows})
+            summary = {"passed": sum(r["ok"] for r in rows), "total": len(rows),
+                       "by_kind": {k: [sum(r["ok"] for r in rows if r["kind"] == k),
+                                       sum(r["kind"] == k for r in rows)] for k in kinds},
+                       "failed": [f"{r['kind']} {r['seed']}" for r in rows if not r["ok"]]}
         elif step == "paired":
             rows = step_paired(entries)
             summary = {"passed": sum(r["ok"] for r in rows), "total": len(rows),
