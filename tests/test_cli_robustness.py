@@ -138,6 +138,22 @@ class Robustness(unittest.TestCase):
         self.assertNotIn("Traceback", err)
         self.assertEqual(self.left_in_tmpdir(), [])
 
+    def test_a_closed_or_full_stdout_is_a_one_line_error(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+        base = [sys.executable, "-P", "-s", "-m", "auditenv.run", "--policy", "oracle", "--episode-dir", str(EPISODE)]
+        cases = [("closed", {"stdout": None, "pass_fds": (), "preexec_fn": lambda: os.close(1)})]
+        if os.path.exists("/dev/full"):
+            cases.append(("full", {"stdout": open("/dev/full", "w")}))
+        for name, extra in cases:
+            with self.subTest(stdout=name):
+                proc = subprocess.run(base, cwd=ROOT, env={**env, "PYTHONPATH": str(ROOT)}, stderr=subprocess.PIPE,
+                                      text=True, timeout=60, **extra)
+                if extra.get("stdout") is not None:
+                    extra["stdout"].close()
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertEqual(len(proc.stderr.splitlines()), 1, proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
+
     def test_a_hangup_ignored_at_start_stays_ignored(self):
         """Under nohup a SIGHUP must not stop the run."""
         submit = ("time.sleep(1)\nprint(json.dumps({'action': 'submit', 'findings': {'episode_id': "

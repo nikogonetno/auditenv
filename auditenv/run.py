@@ -310,6 +310,10 @@ def emit(obj):
     except BrokenPipeError:
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())   # the flush at exit must not fail again
         raise SystemExit(128 + getattr(signal, "SIGPIPE", 13)) from None
+    except OSError as exc:  # e.g. stdout on a full disk
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        print(f"auditenv.run: cannot write the report to stdout: {exc.strerror}", file=sys.stderr)
+        raise SystemExit(2) from None
 
 
 def close_logs(*files):
@@ -349,6 +353,9 @@ def main(argv=None):
     # The seed and config never stay in this process's command line (QA N-1).
     args = parse_args(hide_private_args() if argv is None else argv)
     os.umask(0o077)  # trajectories and the grader log stay unreadable for the sandbox user
+    if sys.stdout is None:  # started with stdout closed (>&-): the report has nowhere to go
+        print("auditenv.run: stdout is closed, the report has nowhere to go", file=sys.stderr)
+        return 2
     for name in STOP_SIGNALS:
         sig = getattr(signal, name, None)
         # A signal ignored at start stays ignored, as Python does for SIGINT: `nohup` keeps working.
