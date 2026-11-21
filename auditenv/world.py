@@ -1007,8 +1007,10 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         months = [m for m in range(1, 13) if c1_boundary_ok(2026, m)]
         period = config["period"] or f"2026-{rng.choice(months):02d}"
         if int(period[5:]) not in months:
-            raise ValueError(f"config: C1 needs a period whose last day and the next day are business days, "
-                             f"{period} has none")
+            allowed = ", ".join(f"2026-{m:02d}" for m in months)
+            raise ValueError(f"config: C1 needs a period whose last day and the next day are business days with "
+                             f"their own rates; {period} has none. Months that fit: {allowed}. With period null "
+                             f"the generator picks one of them")
     else:
         period = config["period"] or f"2026-{rng.randint(1, 12):02d}"
     year, month = int(period[:4]), int(period[5:])

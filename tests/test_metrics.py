@@ -247,5 +247,39 @@ class RowsBeyondTheBaselines(unittest.TestCase):
         self.assertEqual(sum(c["fp"] for c in row["per_type"].values()), row["fp"])
 
 
+class CommittedReport(unittest.TestCase):
+    """`make metrics` gives the committed docs/METRICS.md except the wall-time column (B_saturday.md item 2).
+
+    The recipe is read from the Makefile, so the test needs no make binary (the Docker image has none)."""
+
+    def recipe(self):
+        lines = (ROOT / "Makefile").read_text(encoding="utf-8").splitlines()
+        variables = dict(line.split(" := ", 1) for line in lines if " := " in line)
+        body = lines[lines.index("metrics:") + 1].strip()
+        for name, value in variables.items():
+            body = body.replace(f"$({name})", value)
+        return body.split()[1:]          # drop $(PY)
+
+    def test_make_metrics_repeats_the_committed_report(self):
+        args = self.recipe()
+        self.assertIn("--policies", args)
+        with tempfile.TemporaryDirectory() as tmp:
+            out, rows = Path(tmp) / "METRICS.md", Path(tmp) / "rows.jsonl"
+            args[args.index("--out") + 1], args[args.index("--json") + 1] = str(out), str(rows)
+            proc = run_python(args, cwd=ROOT)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            def without_time(markdown):
+                kept = [line for line in markdown.splitlines() if not line.startswith("|")]
+                found = tables(markdown)
+                for table in found.values():
+                    for row in table:
+                        row.pop(WALL_TIME, None)
+                return kept, found
+
+            committed = (ROOT / "docs" / "METRICS.md").read_text(encoding="utf-8")
+            self.assertEqual(without_time(out.read_text(encoding="utf-8")), without_time(committed))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -91,6 +91,13 @@ class C1(unittest.TestCase):
                 self.assertEqual(verify_episode(str(out)), [])
                 self.assertEqual(oracle(out), 1.0)
 
+    def test_the_error_names_the_months_that_fit_and_period_null(self):
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(ValueError) as caught:
+            generate_episode(1, {"period": "2026-12", "scenarios": {"C1": 1}}, tmp)
+        message = str(caught.exception)
+        for month in ("2026-03", "2026-06", "2026-09", "2026-11", "2026-12", "period null"):
+            self.assertIn(month, message)
+
     def test_impossible_boundaries_are_value_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
             for config in ({"period": "2026-10", "scenarios": {"C1": 1}},         # 31 Oct Sat, 1 Nov Sun

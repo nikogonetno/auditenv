@@ -1,5 +1,7 @@
 PY ?= python3
 N ?= 300
+# The four jury baselines and the diagnostic spray, as in the committed docs/METRICS.md.
+METRICS_POLICIES := random,reconcile,flag_all,oracle,spray
 IMAGE ?= auditenv:dev
 GOLDEN := tests/fixtures/golden_v0.1/episode
 
@@ -38,7 +40,7 @@ episodes:
 
 # Diagnostics of the four policies on train and dev (case §10): docs/METRICS.md, raw rows, train trajectories.
 metrics:
-	$(PY) scripts/metrics.py episodes/train episodes/dev --out docs/METRICS.md --json runs/metrics.json
+	$(PY) scripts/metrics.py episodes/train episodes/dev --policies $(METRICS_POLICIES) --out docs/METRICS.md --json runs/metrics.json
 
 # 20 paired checks (case §10): repeat seed and actions; permutation and new ids once A's transform lands.
 paired:
