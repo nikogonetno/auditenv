@@ -16,7 +16,6 @@ In "train" mode the terminal reward goes back to the policy; in "eval" mode the 
 always sees 0 and empty info, and the grade stays in grader_log.
 """
 import copy
-import shutil
 import tempfile
 
 from .calculator import CalculatorError, evaluate
@@ -109,12 +108,13 @@ class AuditEnv:
                 from .generate import generate_episode as generator  # role A
             except ImportError:
                 raise RuntimeError("the episode generator auditenv.generate is not available yet") from None
+        from .runner import remove_tree
         workdir = tempfile.mkdtemp(prefix="auditenv-episode-")  # 0700: never readable by a policy
         try:
             generator(seed, config, workdir)
             return self._load(workdir)
         finally:
-            shutil.rmtree(workdir, ignore_errors=True)
+            remove_tree(workdir)  # private/ inside: a signal must not leave it half removed
 
     def step(self, action):
         if self._episode is None:

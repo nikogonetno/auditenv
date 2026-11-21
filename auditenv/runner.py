@@ -260,6 +260,36 @@ def _write_lines(stream, outbox):
             pass
 
 
+def remove_tree(path):
+    """shutil.rmtree that a signal cannot cut short: if SystemExit (auditenv.run on SIGTERM) or Ctrl-C lands
+    inside, the removal runs once more and the exception goes on. Further SIGTERM and SIGHUP are ignored by
+    then, so the second pass completes."""
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except Exception:  # RecursionError on a very deep tree the policy built
+        pass
+    except BaseException:
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+        except Exception:
+            pass
+        raise
+
+
+def _stop_policy(proc, user):
+    """Kill the policy's process group and, in the sandbox, every process of its user. Runs once more when a
+    signal cuts it short, then lets the exception go on."""
+    try:
+        _kill(proc)
+        if user is not None:
+            _kill_user(user[0])
+    except BaseException:
+        _kill(proc)
+        if user is not None:
+            _kill_user(user[0])
+        raise
+
+
 def _kill(proc):
     try:
         if hasattr(os, "killpg"):
@@ -308,11 +338,12 @@ def run_subprocess_episode(policy_cmd, env, seed, config, time_limit=TIME_LIMIT_
             cwd=workdir, env=policy_environment(), start_new_session=hasattr(os, "killpg"), **drop,
         )
         lines, outbox, stop = queue.Queue(maxsize=_READ_QUEUE), queue.Queue(), threading.Event()
-        reader = threading.Thread(target=_read_lines, args=(proc.stdout, lines, stop), daemon=True)
-        writer = threading.Thread(target=_write_lines, args=(proc.stdin, outbox), daemon=True)
-        reader.start()
-        writer.start()
+        reader = writer = None
         try:
+            reader = threading.Thread(target=_read_lines, args=(proc.stdout, lines, stop), daemon=True)
+            writer = threading.Thread(target=_write_lines, args=(proc.stdin, outbox), daemon=True)
+            reader.start()
+            writer.start()
             outbox.put(encode_line(transcript.first_message).encode("utf-8"))
             while not transcript.done:
                 remaining = deadline - time.monotonic()
@@ -337,16 +368,14 @@ def run_subprocess_episode(policy_cmd, env, seed, config, time_limit=TIME_LIMIT_
                 proc.wait(timeout=EXIT_GRACE_S)
             except subprocess.TimeoutExpired:
                 pass
-            _kill(proc)
-            if user is not None:
-                _kill_user(user[0])
-            writer.join(timeout=EXIT_GRACE_S)
-            reader.join(timeout=EXIT_GRACE_S)
-            if not reader.is_alive():
+            finally:          # also when a signal lands in the grace wait (QA L17 review)
+                _stop_policy(proc, user)
+            if writer is not None:
+                writer.join(timeout=EXIT_GRACE_S)
+            if reader is not None:
+                reader.join(timeout=EXIT_GRACE_S)
+            if reader is None or not reader.is_alive():
                 proc.stdout.close()
     finally:
-        try:
-            shutil.rmtree(parent, ignore_errors=True)
-        except Exception:  # RecursionError on a very deep tree the policy built
-            pass
+        remove_tree(parent)
     return result

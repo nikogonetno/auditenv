@@ -27,6 +27,7 @@ import os
 import shlex
 import shutil
 import signal
+import stat
 import sys
 from fractions import Fraction
 
@@ -35,8 +36,8 @@ from .config import config_sha256, normalize_config
 from .env import MODES, AuditEnv
 from .grader import f1_score
 from .private_args import hide_private_args
-from .runner import (SANDBOX_MODES, TIME_LIMIT_S, encode_line, run_inprocess_episode, run_subprocess_episode,
-                     sandbox_user)
+from .runner import (SANDBOX_MODES, TIME_LIMIT_S, encode_line, remove_tree, run_inprocess_episode,
+                     run_subprocess_episode, sandbox_user)
 
 SUBPROCESS_POLICIES = {"random": "policies.random_policy", "reconcile": "policies.reconcile", "flag_all": "policies.flag_all"}
 POLICIES = (*SUBPROCESS_POLICIES, "oracle")
@@ -177,12 +178,15 @@ def build_check(runs, info):
     its item number (QA M5). ValueError naming the item."""
     import tempfile                                    # only the set path needs it
     from .generate import generate_episode
-    with tempfile.TemporaryDirectory(prefix="auditenv-set-check-") as root:
+    root = tempfile.mkdtemp(prefix="auditenv-set-check-")
+    try:
         for seed, config in runs:
             try:
                 generate_episode(seed, config, os.path.join(root, str(seed)))
             except (ValueError, RuntimeError) as exc:  # a config error, or WorldError of the generator
                 raise ValueError(f"episode set item {info['item'][seed]} (seed {seed}): {exc}") from None
+    finally:
+        remove_tree(root)                              # built episodes with private/: never half removed
 
 
 def plan_runs(args):
@@ -286,15 +290,20 @@ def _stop(signum, frame):
     for name in ("SIGTERM", "SIGHUP"):
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), signal.SIG_IGN)   # the cleanup itself must not be cut short
-    print(f"auditenv.run: stopped by signal {signum}", file=sys.stderr, flush=True)
+    try:  # raw write: a closed stderr (a hung-up terminal) must not turn the exit code into 120
+        os.write(2, f"auditenv.run: stopped by signal {signum}\n".encode())
+    except OSError:
+        pass
     raise SystemExit(128 + signum)
 
 
 def open_log(path):
-    """A log file opened for appending, mode 0600 also when it existed before (QA L15, L17)."""
+    """A log file opened for appending. A regular file gets mode 0600, also when it existed before, if the
+    runner may change it; a terminal, /dev/null or a FIFO keeps its mode."""
     f = open(path, "a", encoding="utf-8", newline="\n")
     try:
-        os.chmod(path, 0o600)
+        if stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+            os.fchmod(f.fileno(), 0o600)
     except OSError:  # someone else's file: appending is allowed, changing its mode is not
         pass
     return f
@@ -317,8 +326,10 @@ def main(argv=None):
     args = parse_args(hide_private_args() if argv is None else argv)
     os.umask(0o077)  # trajectories and the grader log stay unreadable for the sandbox user
     for name in ("SIGTERM", "SIGHUP"):
-        if hasattr(signal, name):
-            signal.signal(getattr(signal, name), _stop)
+        sig = getattr(signal, name, None)
+        # A signal ignored at start stays ignored, as Python does for SIGINT: `nohup` keeps working.
+        if sig is not None and signal.getsignal(sig) is not signal.SIG_IGN:
+            signal.signal(sig, _stop)
     try:
         runs, info = plan_runs(args)
         policy_cmd = policy_command(args.policy_cmd) if args.policy_cmd is not None else None
