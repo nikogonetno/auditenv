@@ -64,7 +64,7 @@
 ### 3.3 Идентификаторы [v2]
 
 - ID состоит из 6 символов Crockford Base32 и берётся из `random.Random(seed)`. ID назначаются после инъекций и уникальны между всеми таблицами. Уникальность проверяет `test_ids_are_unique_across_tables`.
-- Ссылаться на запись можно как `<таблица>/<id>` или как голый `<id>`, matcher принимает обе формы. Снимается только известный префикс: `invoice`, `payment`, `ledger`, `allocation`, `counterparty`, `line`, `fx`, `doc`. Это тот же список из восьми, что в §5.2 (QA D-3). Для документа годятся и `doc_id`, и `invoice_id` или `payment_id`.
+- Ссылаться на запись можно как `<таблица>/<id>` или как голый `<id>`, matcher принимает обе формы. Снимается только известный префикс: `invoice`, `payment`, `ledger`, `allocation`, `counterparty`, `line`, `fx`, `doc`. Это тот же список из восьми, что в §5.2 (QA D-3). В выводах документ можно назвать и `doc_id`, и `invoice_id` или `payment_id`. Действие `get_document` принимает только `doc_id` (кейс §04), запись по `invoice_id` или `payment_id` читает `get_record`.
 - У строки `fx.csv` обычный ID `fx_id` без слешей, ссылка на неё `fx/<fx_id>` (QA P-04, принято PM).
 - `invoice_number` и `vendor_ref` это деловые атрибуты, а не ID. Смена ID их не трогает, truth на них не ссылается.
 - `je_id` остаётся дополнительной колонкой для группировки строк проводки. В `affected_ids` он не попадает.
@@ -118,6 +118,13 @@
 - `je/…` не встречается ни в `affected_ids`, ни в `evidence_sets`.
 
 `truth.json` содержит также `episode_id`. `provenance.json` описан в `docs/DOMAIN_SPEC_A.md` и `docs/tasks/A_generator.md`. Оценщик его не читает.
+
+Изменения инъекции в `provenance.json` (`injections[].changes`) это список `{record, field, before, after}` в порядке внесения. По ним книгу до ошибок можно восстановить: инъекции откатываются в обратном порядке `order`, изменения каждой с конца (кейс §10, PM 21.11 12.50).
+- **Созданная запись:** `field: null`, `before: null`, `after: "created"`.
+- **Удалённая строка книги:** `field: null`, `before: "removed"`, `after: null` и ключ `row` с полным содержимым строки, те же поля, что в `ledger.csv`, с типами JSON. Документы инъекции не удаляют.
+- **Изменённое поле:** `field` и его значения `before` и `after`.
+
+Тест `tests/test_rollback.py` откатывает train, dev, все config `configs/stress_v3.json` и два config репетиции V с удалёнными строками. Строгий V с пустым эталоном не находит в восстановленной книге ни одного замечания.
 
 ## 4. Контракт среды
 
@@ -191,7 +198,7 @@
 | `company_offsets` | `["+03:00", "+04:00", "+05:00", "+06:00"]` | непустой список разных сдвигов `±HH:MM`, порядок не важен |
 | `errors` | по 1 каждого из четырёх типов | объект `тип → число ≥ 0`. Типы, которые не названы в переданном объекте, равны 0 |
 | `scenarios` | `{"C1": 0, "C2": 0}` | объект `сценарий → число ≥ 0` |
-| `twins` | `[3, 8]` | `[min, max]`, 0 ≤ min ≤ max ≤ 20. Сколько двойников описано в `provenance.json`, см. §4.6. При max 0 не сажаются двойники позднего внесения, полуночи по UTC и возврата |
+| `twins` | `[3, 8]` | `[min, max]`, 0 ≤ min ≤ max ≤ 20. Желаемое число двойников, описанных в `provenance.json`, см. §4.6. На маленьких книгах генератор ставит столько, сколько помещается, и может дать меньше min без `ValueError`; фактическое число видно в `provenance.json` (QA Н-2, PM 21.11 12.50). При max 0 не сажаются двойники позднего внесения, полуночи по UTC и возврата |
 
 - Всего ошибок не больше 12, C1 считается за 3, C2 за 1 (`total_errors`). Чистая компания: все `errors` и `scenarios` равны 0.
 - `fx_rate` и C1 требуют `foreign_pct` max больше 0.
@@ -213,8 +220,10 @@
   После эпизода все процессы этого пользователя убиваются. Без root (машина разработчика) политика работает от того же пользователя, и `--sandbox required` в этом случае отказывается запускаться. Тесты песочницы `tests/test_sandbox.py` идут от root в Docker-шаге CI.
 - **Oracle** работает внутри процесса оценщика (кейс §06) и берёт truth из среды.
 - **Траектории** (кейс §09): строки JSON с ключами `episode_id, step, action, observation, reward, terminated, truncated`. Шаг 0 это reset. Нераспознанная строка записывается как `{"bad_message": код}`, действие больше 64 КБ как размер и sha256. U+2028, U+2029 и U+0085 экранируются. Траектории oracle содержат правильный ответ в действиях, поэтому для закрытых эпизодов их не публикуем.
-- **CLI:** `python -m auditenv.run --policy {random,reconcile,flag_all,oracle} (--episode-dir DIR | --config JSON) [--seed N] [--policy-seed N] [--mode train|eval] [--time-limit S] [--sandbox auto|required|off] [--trajectories PATH] [--grader-log PATH]`, режим по умолчанию `eval`. Демо: `make demo`.
-- **Внешняя политика** запускается через `auditenv.runner.run_subprocess_episode(policy_cmd, env, seed, config, trajectory=…)`. Протокол и живой обмен показаны в README, раздел 4.
+- **CLI:** `python -m auditenv.run (--policy {random,reconcile,flag_all,oracle} | --policy-cmd COMMAND) (--episode-dir DIR | --config JSON) [--seed N] [--policy-seed N] [--mode train|eval] [--time-limit S] [--sandbox auto|required|off] [--trajectories PATH] [--grader-log PATH]`, режим по умолчанию `eval`. `--policy` и `--policy-cmd` взаимоисключающие, нужен ровно один. Демо: `make demo`.
+- **Внешняя политика** запускается флагом `--policy-cmd "python3 my_policy.py"` с теми же лимитами, песочницей, журналом оценщика и траекториями, что у встроенных. Относительный путь к существующему файлу в команде становится абсолютным, потому что политика стартует в пустой папке. Из Python то же делает `auditenv.runner.run_subprocess_episode(policy_cmd, env, seed, config, trajectory=…)`. Протокол, пример `examples/my_policy.py` и живой обмен показаны в README, раздел 4. Тест `tests/test_policy_cmd.py` сравнивает CLI с Python API, в Docker-шаге CI от пользователя `auditpolicy`.
+- **Eval без песочницы** (QA Н-3). `auditenv.run --mode eval` для политики в отдельном процессе без песочницы печатает в stderr предупреждение в одну строку: политика работает от того же пользователя и может прочитать `private/`. Прогон не блокируется. Закрытый прогон жюри делается только в Docker, команда в README, раздел 4.
+- **Время эпизода.** `wall_time_s` у oracle и у политики в отдельном процессе отсчитывается после reset (QA Н-7).
 - **Spray** (`policies/spray.py`) это диагностика, а не политика жюри. Он помечает несущие строки в пределах двух дней от конца периода как ошибки периода, не больше 30. `scripts/metrics.py` запускает его в своём процессе и не пишет для него траекторий (PM 21.11 03.15, E-32).
 - **Seed и config не видны политике (QA N-1, кейс §03).** Командную строку любого процесса читает любой пользователь (`/proc/<pid>/cmdline`), а окружение только его владелец. Поэтому команды, которые запускают политики и принимают seed или config в argv (`auditenv.run`, `scripts/metrics.py`), сначала вызывают `auditenv.private_args.hide_private_args`. `scripts/paired.py` принимает только папки открытых эпизодов, и прятать ему нечего. Он один раз перезапускает процесс через `execve` и переносит `--seed` и `--config` в окружение. Пока работает политика, ни одна командная строка их не содержит. Сокращения флагов отключены (`allow_abbrev=False`). Тест `tests/test_private_args.py` ищет seed во всех `/proc/*/cmdline` из процесса политики. Новая команда, которая запускает политики и принимает seed или config, обязана делать так же.
 
@@ -241,7 +250,7 @@
   - переплата и возврат;
   - ловушка C2.
 
-  В `provenance.json` описано столько двойников, сколько задаёт `config.twins`: двойники курса и периода первыми, ловушка C2 всегда. Остальные похожие записи посчитаны по видам в `other_lookalikes`.
+  В `provenance.json` описано столько двойников, сколько задаёт `config.twins`, если они помещаются в книгу: двойники курса и периода первыми, ловушка C2 всегда. На маленьких книгах их может быть меньше min. Остальные похожие записи посчитаны по видам в `other_lookalikes`.
 - **Возвраты клиенту** (PM 21.11 02.15, кейс §02). Возврат это исходящий платёж клиенту без ссылки на счёт (`invoice_refs` равен `null`). Проводка Дт 3510 Кт 1030 на всю сумму, только в базовой валюте. Сумма не больше остатка 3510 этого клиента от более ранних платежей в банковском порядке. Возврат не является ошибкой ни одного типа. Генератор делает его двойником «переплата и возврат», правило проверяет INV-10 (§6).
 - **Детерминизм.** Тот же `(seed, config)` даёт те же файлы побайтно при любом `PYTHONHASHSEED`. Эпизод генерируется меньше чем за секунду.
 
@@ -255,7 +264,7 @@
 
 Гарантии:
 - truth копии это тот же truth: те же типы, суммы и валюты, а `affected_ids` и `evidence_sets` называют те же записи под новыми ID;
-- `provenance.json` переходит на новые ID;
+- `provenance.json` переходит на новые ID, в том числе внутри содержимого удалённых строк (`row`);
 - новые ID уникальны между таблицами и не совпадают ни с одним старым, включая ID, которые называет только provenance;
 - `private/id_map.json` хранит соответствие старых ID новым;
 - одна и та же соль даёт те же байты.
@@ -353,7 +362,7 @@ reward = clip(2·F1 − 1 − 0.002·inspection_steps, −1, 1)
 | Папка | Владелец |
 |---|---|
 | `auditenv/generate.py`, `auditenv/world.py`, `auditenv/inject/`, `auditenv/transform.py`, `tests/test_generator.py`, `tests/test_scenarios.py`, `tests/test_transform.py`, `episodes/` | B (с 21.11 по решению PM, A не опубликовал генератор); A проверяет данные по своей спецификации |
-| `auditenv/env.py`, `auditenv/config.py`, `auditenv/grader/`, `auditenv/runner.py`, `auditenv/server.py`, `policies/`, `scripts/`, Docker | B |
+| `auditenv/env.py`, `auditenv/config.py`, `auditenv/grader/`, `auditenv/run.py`, `auditenv/runner.py`, `auditenv/server.py`, `policies/`, `examples/`, `scripts/`, Docker и CI | B |
 | `auditenv/verify/`, `tests/test_verify.py` | V, отдельная сессия в worktree `~/auditenv-v`; код генератора не читает |
 | `tests/fixtures/` | `golden_v0.1` от A, `mini_v03` от B; правится только своим владельцем |
 | `qa/` | QA |
