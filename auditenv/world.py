@@ -22,10 +22,12 @@ FOREIGN = ("CNY", "EUR", "RUB", "USD")
 MINOR_UNITS = {c: 2 for c in (BASE, *FOREIGN)}
 WEEKEND_DAYS = (6, 7)                    # ISO weekday numbers, date.isoweekday(): Saturday, Sunday
 # Synthetic non-business days. Only those inside the rate table reach policy.json.
+# Official calendar of Kazakhstan for 2026 (eGov) with its transfers: Nauryz 21-22 March fell on a weekend
+# and moved to 24-25 March, Kurban ait is 27 May; Independence Day is one day, 16 December, since 2022.
 HOLIDAYS = tuple(dt.date.fromisoformat(d) for d in (
-    "2025-12-16", "2025-12-17", "2026-01-01", "2026-01-02", "2026-01-07", "2026-03-09", "2026-03-23",
-    "2026-03-24", "2026-05-01", "2026-05-07", "2026-05-11", "2026-07-06", "2026-08-31", "2026-10-26",
-    "2026-12-16", "2026-12-17", "2027-01-01", "2027-01-07"))
+    "2025-12-16", "2026-01-01", "2026-01-02", "2026-01-07", "2026-03-09", "2026-03-23", "2026-03-24",
+    "2026-03-25", "2026-05-01", "2026-05-07", "2026-05-11", "2026-05-27", "2026-07-06", "2026-08-31",
+    "2026-10-26", "2026-12-16", "2027-01-01", "2027-01-07"))
 WINDOW_DAYS = 7
 NEIGHBOUR_INVOICES = 6                   # per side of the period: 12 rows, INV-03 asks for 10; more when
                                          # an error moves documents out of the neighbour count (anchors)
@@ -66,7 +68,7 @@ ACCOUNTS = (
     ("3510", "Advances received"),
     ("6010", "Revenue"),
     ("6250", "FX gain"),
-    ("7110", "Cost of services"),
+    ("7110", "Selling expenses"),
     ("7210", "Administrative expenses"),
     ("7430", "FX loss"),
 )
@@ -647,7 +649,8 @@ def _amount_lines(rng, world, currency, descriptions, fixed_total=None):
         else:
             qty = rng.choice((1, 1, 1, 2, 3, 4, 5, 10))
             unit = _price(rng, currency, rng.randint(low, high) // (qty * count))
-        text = rng.choice(descriptions).format(a=rng.choice(CITIES), b=rng.choice(CITIES))
+        origin, destination = rng.sample(CITIES, 2)          # a route never ends where it starts
+        text = rng.choice(descriptions).format(a=origin, b=destination)
         lines.append(Line(world.new_key("N"), text, qty, unit))
     return lines
 

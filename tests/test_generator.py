@@ -379,6 +379,72 @@ class Dates(unittest.TestCase):
                         self.assertTrue(any(off(i["issued_at"]) for i in foreign))
 
 
+class DomainReview(unittest.TestCase):
+    """Fixes of the domain review of three episodes (docs/tasks/B_domain_fixes.md, PM 21.11 11.40)."""
+
+    OFFICIAL_2026 = {"2026-01-01", "2026-01-02", "2026-01-07", "2026-03-09", "2026-03-23", "2026-03-24",
+                     "2026-03-25", "2026-05-01", "2026-05-07", "2026-05-11", "2026-05-27", "2026-07-06",
+                     "2026-08-31", "2026-10-26", "2026-12-16"}
+
+    def test_holidays_of_2026_are_the_official_calendar_with_transfers(self):
+        from auditenv.world import HOLIDAYS
+        self.assertEqual({d.isoformat() for d in HOLIDAYS if d.year == 2026}, self.OFFICIAL_2026)
+        with tempfile.TemporaryDirectory() as tmp:
+            for period in ("2026-03", "2026-05", "2026-12"):
+                out = Path(tmp) / period
+                generate_episode(1, {"period": period, "errors": {}}, str(out))
+                policy = json.loads((out / "public" / "policy.json").read_text(encoding="utf-8"))
+                published = set(policy["fx"]["holidays"])
+                with self.subTest(period=period):
+                    self.assertTrue(published & self.OFFICIAL_2026)
+                    self.assertTrue({d for d in published if d.startswith("2026")} <= self.OFFICIAL_2026)
+                    self.assertNotIn("2026-12-17", published)
+
+    def test_account_7110_is_selling_expenses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            generate_episode(1, {"errors": {}}, tmp)
+            policy = json.loads((Path(tmp) / "public" / "policy.json").read_text(encoding="utf-8"))
+        self.assertIn({"code": "7110", "name": "Selling expenses"}, policy["accounts"])
+
+    def test_a_route_never_ends_in_the_city_it_starts(self):
+        from auditenv.world import CITIES
+        route = re.compile(r"\b(%s)-(%s)\b" % ("|".join(CITIES), "|".join(CITIES)))
+        routes = 0
+        with tempfile.TemporaryDirectory() as tmp:
+            for seed in range(8):
+                out = Path(tmp) / str(seed)
+                generate_episode(700 + seed, {"errors": {}}, str(out))
+                invoices, _, _, _, _ = read_episode(out)
+                for line in (x for i in invoices for x in i["line_items"]):
+                    for a, b in route.findall(line["description"]):
+                        routes += 1
+                        self.assertNotEqual(a, b, line["description"])
+        self.assertGreater(routes, 20)
+
+    def test_root_causes_name_no_copy_and_no_typo(self):
+        configs = ({"errors": {"payment_allocation": 2, "duplicate_invoice": 1}},
+                   {"errors": {}, "scenarios": {"C1": 1}}, {"errors": {}, "scenarios": {"C2": 1}})
+        with tempfile.TemporaryDirectory() as tmp:
+            for n, config in enumerate(configs):
+                out = Path(tmp) / str(n)
+                generate_episode(4, config, str(out))
+                _, _, _, _, provenance = read_episode(out)
+                texts = [i["root_cause"] for i in provenance["injections"]]
+                texts += [c["cause"] for i in provenance["injections"] for c in i.get("root_causes", ())]
+                texts += [t["distinguishing_feature"] for t in provenance["twins"] if t["kind"] == "c2_trap"]
+                with self.subTest(config=config):
+                    self.assertTrue(texts)
+                    for text in texts:
+                        if "keyed twice" in text and not config["errors"]:
+                            self.assertNotIn("copy", text)
+                        self.assertNotIn("typo", text)
+                        self.assertNotIn("keyed as", text)
+                    allocation = [t for t in texts if "3510" in t]
+                    if "C2" not in config.get("scenarios", {}):
+                        self.assertTrue(allocation)
+                        self.assertTrue(all("only part of the payment allocated to the invoice" in t for t in allocation))
+
+
 class Determinism(unittest.TestCase):
     def test_same_seed_same_bytes_under_different_hash_seeds(self):
         with tempfile.TemporaryDirectory() as tmp:

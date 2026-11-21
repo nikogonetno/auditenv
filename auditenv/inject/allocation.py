@@ -45,5 +45,6 @@ def inject(rng, world, used):
     if not 2 < rest < amount:
         raise ValueError("config: receipt too small for payment_allocation")
     pay.alloc = [(inv_key, amount - rest)]
-    cause = f"allocation keyed as {amount - rest} instead of {amount}, the rest left on 3510"
+    cause = (f"only part of the payment allocated to the invoice, {amount - rest} of {amount}; "
+             f"the rest {rest} lay on 3510")
     return VARIANT, cause, [(pay.key, inv_key)], {pay.key, inv_key}
