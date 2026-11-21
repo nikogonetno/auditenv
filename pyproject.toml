@@ -3,6 +3,8 @@ name = "auditenv"
 version = "0.0.1"
 description = "Offline RL environment for an AI financial auditor: synthetic ledgers with hidden errors, narrow tools, strict grader"
 readme = "README.md"
+license = "MIT"                       # SPDX expression (PEP 639); the text is in LICENSE
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 # No runtime dependencies on purpose: the jury runs verification without network.
 dependencies = []

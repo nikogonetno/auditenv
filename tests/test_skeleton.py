@@ -32,6 +32,16 @@ class Skeleton(unittest.TestCase):
             project = tomllib.load(f)["project"]
         self.assertEqual(project["dependencies"], [], "verification must run offline")
 
+    def test_sources_carry_the_mit_license(self):
+        """Case §09: sources with a license and pinned dependencies."""
+        with open(ROOT / "pyproject.toml", "rb") as f:
+            project = tomllib.load(f)["project"]
+        self.assertEqual((project["license"], project["license-files"]), ("MIT", ["LICENSE"]))
+        text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("MIT License\n"))
+        self.assertIn("Permission is hereby granted, free of charge", text)
+        self.assertIn("FROM python:3.11.11-slim-bookworm", (ROOT / "Dockerfile").read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()
