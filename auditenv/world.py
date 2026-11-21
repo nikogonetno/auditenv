@@ -21,7 +21,7 @@ BASE = "KZT"
 FOREIGN = ("CNY", "EUR", "RUB", "USD")
 MINOR_UNITS = {c: 2 for c in (BASE, *FOREIGN)}
 WEEKEND_DAYS = (6, 7)                    # ISO weekday numbers, date.isoweekday(): Saturday, Sunday
-# Synthetic non-business days. Only those inside the rate table reach policy.json.
+# Non-business days. Only those inside the rate table reach policy.json.
 # Official calendar of Kazakhstan for 2026 (eGov) with its transfers: Nauryz 21-22 March fell on a weekend
 # and moved to 24-25 March, Kurban ait is 27 May; Independence Day is one day, 16 December, since 2022.
 HOLIDAYS = tuple(dt.date.fromisoformat(d) for d in (

@@ -3,9 +3,9 @@
 C1. A foreign customer pays an invoice in full just after the midnight that ends the period (company time;
     for a negative offset just before it). The clerk takes the bank's UTC date as the posting date, and the
     system takes that date's rate: period_cutoff and fx_rate on the payment's 1030 row. A second, separate
-    cause: only part of the receipt is allocated to the invoice, the rest lies on 3510: payment_allocation. Three truth
-    issues; period and rate share their affected id, which the matcher pairs by type. Every amount comes
-    from the final book by the formula of its type (auditenv/generate.py).
+    cause: only part of the receipt is allocated to the invoice, and the rest lies on 3510:
+    payment_allocation. Three truth issues; period and rate share their affected id, which the matcher
+    pairs by type. Every amount comes from the final book by the formula of its type (auditenv/generate.py).
 
 C2. A vendor bill is keyed twice, and the real payment, whose remittance names the bill's reference and so
     both records, is allocated to the added record, which is keyed before the payment and sometimes before
