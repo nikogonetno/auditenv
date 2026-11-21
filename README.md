@@ -10,7 +10,7 @@
 
 Только стандартная библиотека Python 3.11, без сети, GPU и внешних API. **Все компании, люди, счета, платежи и курсы вымышлены.**
 
-**Лицензия и зависимости.** Код под лицензией MIT, текст в [LICENSE](LICENSE). Зависимостей для запуска нет (`dependencies = []` в `pyproject.toml`), нужен Python 3.11 или новее; необязательный `pytest` для разработки закреплён на 8.3.4. Образ Docker закреплён на `python:3.11.11-slim-bookworm`.
+**Лицензия и зависимости.** Код под лицензией MIT, текст в [LICENSE](LICENSE). Зависимостей для запуска нет (`dependencies = []` в `pyproject.toml`), нужен Python 3.11 или новее; необязательный `pytest` для разработки закреплён на 8.3.4. Образ Docker закреплён на `python:3.11.11-slim-bookworm` и его digest `sha256:081075da…` (`Dockerfile`).
 
 ## 1. Одна команда проверки
 
@@ -18,13 +18,16 @@
 make verify
 ```
 
-Скрипт `scripts/verify.sh` выполняет четыре шага:
-1. юнит-тесты, 433 теста на stdlib `unittest`;
-2. детектор QA на эталонном эпизоде;
-3. стресс по одному seed на каждый из 11 config `configs/stress_v3.json`: генератор, строгий верификатор V, oracle 1.0, побайтная воспроизводимость при разных `PYTHONHASHSEED`;
-4. последняя строка вывода `verify: OK`.
+Скрипт `scripts/verify.sh` выполняет три шага:
+1. юнит-тесты, 439 тестов на stdlib `unittest`;
+2. стресс по одному seed на каждый из 11 config `configs/stress_v3.json`: генератор, строгий верификатор V, oracle 1.0, побайтная воспроизводимость в свежих процессах при `PYTHONHASHSEED` 0 и 1. Итоговая строка стресса это говорит прямо: `"determinism": "11 of 11 episodes byte-identical …"`;
+3. последняя строка вывода `verify: OK`.
 
-Без root пропускаются 9 тестов песочницы, им нужен пользователь `auditpolicy` из Docker-образа.
+**Какие тесты пропускаются и где идут.** Каждый тест выполняется хотя бы в одном шаге CI.
+- **Без root** пропускаются 10 тестов песочницы: им нужен пользователь `auditpolicy` из Docker-образа. Они идут в Docker-шаге CI.
+- **В Docker** пропускаются 4 теста режима без песочницы: там песочница есть всегда. Они идут в первом шаге CI, `make verify` на Python 3.11.
+
+Детектор QA на старом эталоне `tests/fixtures/golden_v0.1` в единую команду не входит. Он запускается отдельно, `make qa`, и печатает замечания про прежнюю схему эталона: это ожидаемо и на проверку не влияет.
 
 Тот же скрипт в Docker, без сети. Так он идёт в CI вместе со всеми тестами песочницы:
 
@@ -65,7 +68,7 @@ python3 -m auditenv.run --policy oracle --mode eval --episode-dir out/ep7
 Вывод это одна строка JSON:
 
 ```json
-{"episode_id": "EGGYPY", "f1": 1.0, "fn": 0, "fp": 0, "inspection_steps": 0, "mode": "eval", "policy": "oracle", "policy_seed": 0, "precision": 1.0, "recall": 1.0, "reward": 1.0, "seed": 0, "seen_reward": 0.0, "steps": 1, "terminated": true, "tp": 4, "truncated": false, "wall_time_s": 0.009}
+{"code_version": "0.0.1", "config_sha256": "282e69dc9bf14e7fe9e29a79ebd6c61ff6fbd9cde81b706c7e8b61ee31e04c3a", "episode_id": "EGGYPY", "f1": 1.0, "fn": 0, "fp": 0, "inspection_steps": 0, "mode": "eval", "policy": "oracle", "policy_seed": 0, "precision": 1.0, "recall": 1.0, "reward": 1.0, "seed": 0, "seen_reward": 0.0, "steps": 1, "terminated": true, "tp": 4, "truncated": false, "wall_time_s": 0.001}
 ```
 
 Эпизод прямо из генератора, через `env.reset(seed, config)`:
@@ -74,11 +77,27 @@ python3 -m auditenv.run --policy oracle --mode eval --episode-dir out/ep7
 python3 -m auditenv.run --policy reconcile --mode eval --config '{"scenarios": {"C1": 1}}' --seed 7
 ```
 
-Как читать поля вывода:
-- `reward` это настоящая награда оценщика.
-- `seen_reward` это то, что видела политика. В режиме `eval` она всегда 0 (кейс §04), в режиме `train` политика получает терминальную награду.
-- `--trajectories PATH` дописывает траекторию в файл, `--grader-log PATH` дописывает журнал оценщика.
-- Seed и config не попадают в командную строку процесса политики.
+Поля вывода:
+
+| поле | что значит |
+|---|---|
+| `reward` | настоящая награда оценщика |
+| `seen_reward` | что видела политика: в режиме `eval` всегда 0 (кейс §04), в режиме `train` терминальная награда |
+| `tp`, `fp`, `fn`, `precision`, `recall`, `f1` | оценка выводов. При неверной структуре submit они `null`, награда −1, а поле `error` даёт код, например `episode_id_mismatch` |
+| `steps` | сколько строк политики раннер отдал в `env.step`, submit тоже |
+| `inspection_steps` | шаги до submit, штраф 0.002 за каждый |
+| `terminated`, `truncated` | эпизод закончился submit или обрезан (лимит времени, 100 шагов, политика закрыла вывод) |
+| `seed` | seed эпизода для `env.reset`. При `--episode-dir` он не используется и равен значению `--seed`, по умолчанию 0 |
+| `policy`, `policy_cmd` | имя встроенной политики или `external` и команда для `--policy-cmd` |
+| `policy_seed` | seed процесса встроенной политики (`random`), у внешней не используется |
+| `mode` | `train` или `eval` |
+| `sandbox` | `uid`: политика работала от `auditpolicy`; `none`: без песочницы. У oracle поля нет, он работает в процессе оценщика |
+| `wall_time_s` | время эпизода после reset, в секундах |
+| `code_version` | версия кода `auditenv` |
+| `config_sha256` | sha256 нормализованного config эпизода, как в `provenance.json` и `index.json`; у готового эпизода без `provenance.json` `null` |
+| `episode_set` | версия набора, если `--config` дал файл набора |
+
+`--trajectories PATH` дописывает траекторию в файл, `--grader-log PATH` дописывает журнал оценщика. Seed и config не попадают в командную строку процесса политики.
 
 Четыре политики жюри и диагностический spray (раздел 7) на открытых train и dev разом. Команда перезаписывает `docs/METRICS.md`:
 
@@ -120,7 +139,8 @@ python3 -m auditenv.run --policy-cmd "python3 examples/my_policy.py" --episode-d
 ```
 
 - **Лимиты и журналы те же, что у встроенных политик:** 100 шагов, 60 секунд, журнал оценщика `--grader-log` и траектории `--trajectories`.
-- **Флаги.** `--policy` и `--policy-cmd` взаимоисключающие, нужен ровно один. Вместо `--episode-dir` можно передать `--config FILE --seed N`.
+- **Флаги.** `--policy` и `--policy-cmd` взаимоисключающие, нужен ровно один. Вместо `--episode-dir` можно передать `--config` с `--seed N`. `--config` принимает строку JSON (`'{}'`), путь к файлу с одним config или файл набора эпизодов вида `configs/dev_v2.json`. С набором и `--seed` берётся этот эпизод набора, без `--seed` идут все эпизоды набора по очереди, по строке на эпизод и строка итога.
+- **Конец эпизода.** После submit раннер отправляет политике последний ответ, закрывает её stdin, ждёт до 2 секунд и завершает процесс. Лимит времени на эпизод 60 секунд, его меняет `--time-limit S`.
 - **Пути.** Относительный путь к существующему файлу в команде раннер делает абсолютным, потому что политика стартует в пустой временной папке.
 
 В Docker политика работает от пользователя `auditpolicy` и не видит `private/`. Путь к своей политике подставьте вместо `examples/my_policy.py`:
@@ -130,12 +150,27 @@ docker build -t auditenv:dev .
 docker run --rm --network none -v "$PWD/examples/my_policy.py:/policy/my_policy.py:ro" auditenv:dev python3 -m auditenv.run --policy-cmd "python3 /policy/my_policy.py" --config '{}' --seed 7 --mode eval --sandbox required
 ```
 
-**Закрытый прогон жюри.** Закрытый прогон делайте только в Docker-образе, командой выше со своим `--config` и скрытым `--seed`.
-- **Почему только в Docker.** Вне Docker политика работает от того же пользователя, что и раннер, и может прочитать `private/`, то есть эталон. Поэтому `--mode eval` без песочницы печатает в stderr предупреждение в одну строку. Сам прогон при этом идёт: так работают наши скрипты метрик и демо.
-- **Как устроено в образе.** Раннер работает от root, политика от `auditpolicy`. `--sandbox required` отказывается запускаться, если песочницы нет.
-- **Проверка в CI.** Эта же команда с примером политики запускается в CI после сборки образа.
+**Закрытый прогон жюри.** Делайте его только в Docker-образе. Одна команда прогоняет весь скрытый набор и пишет траектории и журнал оценщика в смонтированную папку:
 
-Тот же раннер доступен из Python. Код ниже выполняется из корня репозитория:
+```bash
+mkdir -m 755 policy && cp examples/my_policy.py policy/
+mkdir -m 700 jury_in jury_out && cp hidden_set.json jury_in/
+docker run --rm --network none -v "$PWD/policy:/policy:ro" -v "$PWD/jury_in:/in:ro" -v "$PWD/jury_out:/out" auditenv:dev python3 -m auditenv.run --policy-cmd "python3 /policy/my_policy.py" --config /in/hidden_set.json --mode eval --sandbox required --trajectories /out/trajectories.jsonl --grader-log /out/grader_log.jsonl
+sudo chown -R "$(id -u):$(id -g)" jury_out
+```
+
+- **Три папки.**
+  - `policy`: политика, только для чтения. Политика из нескольких файлов кладётся туда же целиком.
+  - `jury_in`: файл набора `hidden_set.json` в формате `configs/dev_v2.json`, `{version, split, episodes: [{seed, config}]}`.
+  - `jury_out`: журналы.
+- **Почему набор не в папке политики.** По seed и config политика могла бы сама собрать эпизод вместе с эталоном. Папка `jury_in` создана с правами 700 и принадлежит вам, поэтому раннер от root её читает, а `auditpolicy` нет.
+- **Журналы.** Раннер пишет `jury_out` с umask 077, и `auditpolicy` их тоже не читает. Файлы создаёт root внутри контейнера, поэтому последняя команда возвращает их вам.
+- **Вывод:** строка JSON на каждый эпизод и строка итога со средней наградой, TP, FP, FN, P, R, F1 и средним числом шагов.
+- **Почему только в Docker.** Вне Docker политика работает от того же пользователя, что и раннер, и может прочитать `private/`, то есть эталон. Поэтому `--mode eval` без песочницы печатает в stderr предупреждение в одну строку. Сам прогон при этом идёт: так работают наши скрипты метрик и демо.
+- **Как устроено в образе.** Раннер работает от root, политика от `auditpolicy`. `--sandbox required` без песочницы сразу отказывается с одним сообщением.
+- **Проверка в CI.** Эти же команды с примером политики и набором из двух эпизодов dev запускаются в CI после сборки образа. CI проверяет траектории обоих эпизодов и журнал оценщика в `jury_out`. Тест в Docker проверяет, что `auditpolicy` не читает ни журналы, ни файл набора.
+
+Тот же раннер доступен из Python. Пакет не устанавливается, поэтому код ниже запускается из корня репозитория: файлом в корне, через `python3 - < файл` или с `PYTHONPATH=.`:
 
 ```python
 import sys
@@ -249,11 +284,13 @@ print(result, env.grader_log[-1]["reward"])
 
 ## 6. Открытые эпизоды train и dev
 
-- **Train:** `episodes/train/<seed>/`, seed 1000…1009, config в `configs/train_v2.json`.
-- **Dev:** `episodes/dev/<seed>/`, seed 2000…2009, config в `configs/dev_v2.json`.
+- **Train:** `episodes/train/<seed>/`, seed 1000…1009, набор config в `configs/train_v2.json`.
+- **Dev:** `episodes/dev/<seed>/`, seed 2000…2009, набор config в `configs/dev_v2.json`.
+- **Наборы.** Файлы в `configs/*_v2.json` это наборы `{version, split, comment, episodes: [{seed, config}]}`. Их принимает `--config`, например `python3 -m auditenv.run --policy oracle --config configs/dev_v2.json --seed 2000` повторяет эпизод dev 2000 (`DQ1576`).
 - **Индекс:** `index.json` в каждой папке набора, с seed, `episode_id`, sha256 config, признаком чистоты и числом ошибок.
 - **Состав:** из 20 эпизодов 5 чистых и 5 со сценариями C1 или C2.
 - **Траектории** четырёх политик на train в режиме `train` лежат в `episodes/train/trajectories.jsonl`. Ключи по кейсу §09: `episode_id, step, action, observation, reward, terminated, truncated`. Закрытого эталона в наблюдениях нет.
+- **Порядок в файле траекторий.** Эпизоды идут по seed, 1000…1009. Внутри эпизода подряд идут `random`, `reconcile`, `flag_all` и `oracle`, каждая политика с шага 0. Имени политики в строке нет: кейс §09 задаёт ровно семь ключей, поэтому политику даёт порядок, а новый прогон начинается со строки `step` 0.
 
 Пересборка даёт те же файлы побайтно:
 
@@ -261,10 +298,10 @@ print(result, env.grader_log[-1]["reward"])
 make episodes
 ```
 
-Траектории train пересобираются так. Скрипт дописывает в конец файла, поэтому файла `runs/trajectories.jsonl` до запуска быть не должно; результат совпадает с закоммиченным `episodes/train/trajectories.jsonl` побайтно:
+Траектории train пересобираются так. Скрипт дописывает в конец файла, поэтому команда сначала удаляет старый `runs/trajectories.jsonl`, например после `make demo`. Результат совпадает с закоммиченным `episodes/train/trajectories.jsonl` побайтно:
 
 ```bash
-python3 scripts/metrics.py episodes/train --mode train --out runs/train.md --trajectories runs/trajectories.jsonl
+rm -f runs/trajectories.jsonl && python3 scripts/metrics.py episodes/train --mode train --out runs/train.md --trajectories runs/trajectories.jsonl
 ```
 
 ## 7. Результаты политик
@@ -280,7 +317,7 @@ python3 scripts/metrics.py episodes/train --mode train --out runs/train.md --tra
 | random | 0.000 | −1.000 | −1.000 | −1.000 |
 
 - **«Пометить всё»** не выше молчания ни на одном эпизоде и даёт −1 на каждой чистой компании.
-- **Сверка** пропускает 6 ошибок, все это ошибки периода, у которых дата документа по UTC ещё в периоде: 3 в сценарии C1 и 3 счёта, выставленные в первые 15 минут после местной полуночи. Из-за лимита в 30 выводов она не пропускает ничего.
+- **Сверка** пропускает 6 ошибок, все это ошибки периода, у которых дата документа по UTC ещё в периоде: 3 в сценарии C1 и 3 счёта, выставленные в первые 15 минут после местной полуночи (`docs/METRICS.md`, раздел «Пропуски сверки по сценариям»). Из-за лимита в 30 выводов она не пропускает ничего.
 - **Spray** это не политика жюри, а диагностика угадывания у границы периода (`policies/spray.py`).
 
 Повторить отчёт побайтно, кроме столбца времени:
@@ -295,7 +332,7 @@ make metrics
 make paired
 ```
 
-Скрипт `scripts/paired.py` проводит 20 проверок на `episodes/dev` (кейс §10, «Воспроизводимость и обобщение»):
+Скрипт `scripts/paired.py` проводит 20 проверок на `episodes/dev` (кейс §06 и §10, «Воспроизводимость и обобщение»). Каждая проверка делает обе части ниже и проходит, только если прошли обе:
 - **Повтор.** Тот же seed и те же действия дают побайтно ту же траекторию и награду.
 - **Перестановка и смена ID** через `auditenv/transform.py` `permute_and_rename(episode_dir, out_dir, salt)`. Строки переставлены, все ID новые, truth переходит в тот же truth с новыми ID и теми же суммами. Oracle получает 1.0 на оригинале и на копии, сверка получает ту же награду.
 
