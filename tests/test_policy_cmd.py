@@ -92,6 +92,20 @@ class PolicyCommand(unittest.TestCase):
         self.assertIn("one of the arguments --policy --policy-cmd is required", neither.stderr)
         self.assertIn("--policy-cmd is empty", empty.stderr)
 
+    def test_a_command_that_cannot_start_is_a_clean_error_before_reset(self):
+        script = self.root / "p.py"
+        script.write_text("print('{}')\n", encoding="utf-8")
+        script.chmod(0o644)                                  # not executable
+        traj = self.root / "t.jsonl"
+        for command in ("no-such-program-xyz x.py", str(script)):
+            with self.subTest(command=command):
+                proc = run_cli("--policy-cmd", command, "--episode-dir", str(EPISODE), "--mode", "train",
+                               "--trajectories", str(traj))
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIn("auditenv.run: cannot start the policy:", proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
+                self.assertFalse(traj.exists() and traj.read_text(encoding="utf-8"))
+
     def test_relative_paths_to_existing_files_become_absolute(self):
         cwd = os.getcwd()
         try:

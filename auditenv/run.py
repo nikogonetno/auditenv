@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import sys
 
 from .env import MODES, AuditEnv
@@ -61,8 +62,15 @@ def policy_command(text):
     argv = shlex.split(text)
     if not argv:
         raise ValueError("--policy-cmd is empty")
-    return [os.path.abspath(arg) if (n or os.sep in arg) and not os.path.isabs(arg) and os.path.isfile(arg)
+    argv = [os.path.abspath(arg) if (n or os.sep in arg) and not os.path.isabs(arg) and os.path.isfile(arg)
             else arg for n, arg in enumerate(argv)]
+    # Checked before reset, so a typo gives a clean error and no half-written trajectory. The policy gets
+    # the same PATH (auditenv.runner.policy_environment).
+    program = argv[0]
+    found = (os.path.isfile(program) and os.access(program, os.X_OK)) if os.sep in program else shutil.which(program)
+    if not found:
+        raise ValueError(f"cannot start the policy: {program}: not found or not executable")
+    return argv
 
 
 def run_policy(policy, env, seed, config, policy_seed=0, time_limit=TIME_LIMIT_S, trajectory=None, sandbox="auto",
@@ -124,6 +132,9 @@ def main(argv=None):
                             args.sandbox, policy_cmd)
     except (ValueError, RuntimeError) as exc:  # broken config or episode directory, or no sandbox when required
         print(f"auditenv.run: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:  # the policy command failed to start, e.g. the sandbox user cannot run it
+        print(f"auditenv.run: cannot start the policy: {exc.strerror}: {exc.filename}", file=sys.stderr)
         return 2
     finally:
         if trajectory is not None:

@@ -176,7 +176,13 @@ def permute_and_rename(episode_dir, out_dir, salt):
              "private/id_map.json": _json({"salt": salt, "source_episode_id": manifest["episode_id"],
                                            "ids": dict(sorted(id_map.items()))})}
     if provenance is not None:
-        files["private/provenance.json"] = _json({**_map_refs(provenance, id_map),
+        new_provenance = _map_refs(provenance, id_map)
+        for change in (c for inj in new_provenance.get("injections", ()) for c in inj.get("changes", ())):
+            if change.get("field") == "invoice_refs":         # sorted like the public invoice_refs above
+                for side in ("before", "after"):
+                    if isinstance(change[side], list):
+                        change[side] = sorted(change[side])
+        files["private/provenance.json"] = _json({**new_provenance,
                                                   "transform": {"salt": salt,
                                                                 "source_episode_id": manifest["episode_id"]}})
     for rel in sorted(files):

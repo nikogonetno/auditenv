@@ -108,6 +108,15 @@ class Rollback(unittest.TestCase):
                 undone += self.assert_clean_before_the_errors(episode, f"{episode.parent.name}-{episode.name}")
         self.assertGreater(undone, 0)
 
+    def test_copies_after_permutation_and_new_ids_roll_back_too(self):
+        """transform keeps provenance consistent with the renamed book, invoice_refs order included."""
+        for episode in sorted((ROOT / "episodes").glob("*/[0-9]*")):
+            name = f"{episode.parent.name}-{episode.name}"
+            copy = self.root / f"{name}-copy"
+            permute_and_rename(episode, copy, "rollback")
+            with self.subTest(episode=name):
+                self.assert_clean_before_the_errors(copy, f"{name}-copy")
+
     def test_removed_rows_carry_their_content_and_roll_back(self):
         removed = 0
         for seed, config in REHEARSAL.items():
