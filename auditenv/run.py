@@ -50,9 +50,18 @@ NO_SANDBOX_WARNING = ("auditenv.run: WARNING: eval run without the sandbox: the 
                       "\"Закрытый прогон жюри\"")
 
 
+class Parser(argparse.ArgumentParser):
+    """argparse whose usage errors go straight to fd 2, as every other error line of the runner: a stderr
+    nobody reads (`2>&1 | true`) must not turn exit 2 into 120 (QA L20)."""
+
+    def error(self, message):
+        say(self.format_usage().rstrip("\n") + f"\n{self.prog}: error: {message}")
+        raise SystemExit(2)
+
+
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(prog="python -m auditenv.run", description=__doc__.split("\n\n")[0],
-                                     allow_abbrev=False)  # see auditenv.private_args
+    parser = Parser(prog="python -m auditenv.run", description=__doc__.split("\n\n")[0],
+                    allow_abbrev=False)  # see auditenv.private_args
     who = parser.add_mutually_exclusive_group(required=True)
     who.add_argument("--policy", choices=POLICIES)
     who.add_argument("--policy-cmd", metavar="COMMAND",
@@ -178,13 +187,19 @@ def build_check(runs, info):
     its item number (QA M5). ValueError naming the item."""
     import tempfile                                    # only the set path needs it
     from .generate import generate_episode
-    root = tempfile.mkdtemp(prefix="auditenv-set-check-")
+    try:
+        root = tempfile.mkdtemp(prefix="auditenv-set-check-")
+    except OSError as exc:  # no usable temporary folder, or no room in it (QA L20)
+        raise ValueError(f"cannot build the episode set: {exc.strerror}") from None
     try:
         for seed, config in runs:
             try:
                 generate_episode(seed, config, os.path.join(root, str(seed)))
             except (ValueError, RuntimeError) as exc:  # a config error, or WorldError of the generator
                 raise ValueError(f"episode set item {info['item'][seed]} (seed {seed}): {exc}") from None
+            except OSError as exc:  # no room in the temporary folder (QA L20)
+                raise ValueError(f"episode set item {info['item'][seed]} (seed {seed}): cannot build the episode: "
+                                 f"{exc.strerror}") from None
     finally:
         remove_tree(root)                              # built episodes with private/: never half removed
 
@@ -284,18 +299,28 @@ def load_config(text):
     return config
 
 
-STOP_SIGNALS = ("SIGINT", "SIGTERM", "SIGHUP")
+STOP_SIGNALS = ("SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT")
+
+
+def say(text):
+    """One line on stderr, straight to fd 2. A stderr nobody reads (`2>&1 | true`) or a closed one must not
+    turn the exit code into 120 (QA L20)."""
+    try:
+        os.write(2, (text + "\n").encode("utf-8", "replace"))
+    except OSError:
+        pass
 
 
 def _stop(signum, frame):
-    """Ctrl-C, SIGTERM or SIGHUP: leave through every finally block, so the policy process group is killed and
+    """Ctrl-C, SIGTERM, SIGHUP or SIGQUIT: leave through every finally block, so the policy process group is killed and
     the temporary folders (the policy's, the set check's) are removed (QA L17), with one line on stderr and
     no traceback (QA L19)."""
     for name in STOP_SIGNALS:
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), signal.SIG_IGN)   # the cleanup itself must not be cut short
-    try:  # raw write: a closed stderr (a hung-up terminal) must not turn the exit code into 120
-        os.write(2, f"auditenv.run: stopped by signal {signum}\n".encode())
+    say(f"auditenv.run: stopped by signal {signum}")  # a closed stderr must not change the exit code
+    try:  # a report line cut short in the stdout buffer must not fail again at exit (exit 120)
+        os.dup2(os.open(os.devnull, os.O_WRONLY), 1)
     except OSError:
         pass
     raise SystemExit(128 + signum)
@@ -312,8 +337,37 @@ def emit(obj):
         raise SystemExit(128 + getattr(signal, "SIGPIPE", 13)) from None
     except OSError as exc:  # e.g. stdout on a full disk
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
-        print(f"auditenv.run: cannot write the report to stdout: {exc.strerror}", file=sys.stderr)
+        say(f"auditenv.run: cannot write the report to stdout: {exc.strerror}")
         raise SystemExit(2) from None
+
+
+def _size_if_regular(f):
+    st = os.fstat(f.fileno())
+    return st.st_size if stat.S_ISREG(st.st_mode) else None
+
+
+def write_episode(logs):
+    """Append one episode to every log, [(file, bytes)]. If any write fails or is cut short by a signal, the
+    regular files are cut back to where they were before this episode, so every log ends with a whole line and
+    the logs agree (QA L20). A FIFO or a device cannot be cut back. Re-raises."""
+    marks = [_size_if_regular(f) for f, _ in logs]
+    try:
+        for n, (f, data) in enumerate(logs):
+            view = memoryview(data)
+            try:
+                while view:
+                    view = view[f.write(view):]
+            except OSError as exc:
+                exc.log_index = n                       # which log did not take it, for the message
+                raise
+    except BaseException:
+        for (f, _), mark in zip(logs, marks):
+            if mark is not None:
+                try:
+                    os.ftruncate(f.fileno(), mark)
+                except OSError:
+                    pass
+        raise
 
 
 def close_logs(*files):
@@ -326,9 +380,10 @@ def close_logs(*files):
 
 
 def open_log(path):
-    """A log file opened for appending. A regular file gets mode 0600, also when it existed before, if the
-    runner may change it; a terminal, /dev/null or a FIFO keeps its mode."""
-    f = open(path, "a", encoding="utf-8", newline="\n")
+    """A log file opened for appending bytes, unbuffered: write_episode decides what reaches the disk. A regular
+    file gets mode 0600, also when it existed before, if the runner may change it; a terminal, /dev/null or a
+    FIFO keeps its mode."""
+    f = open(path, "ab", buffering=0)
     try:
         if stat.S_ISREG(os.fstat(f.fileno()).st_mode):
             os.fchmod(f.fileno(), 0o600)
@@ -354,7 +409,7 @@ def main(argv=None):
     args = parse_args(hide_private_args() if argv is None else argv)
     os.umask(0o077)  # trajectories and the grader log stay unreadable for the sandbox user
     if sys.stdout is None:  # started with stdout closed (>&-): the report has nowhere to go
-        print("auditenv.run: stdout is closed, the report has nowhere to go", file=sys.stderr)
+        say("auditenv.run: stdout is closed, the report has nowhere to go")
         return 2
     for name in STOP_SIGNALS:
         sig = getattr(signal, name, None)
@@ -365,32 +420,31 @@ def main(argv=None):
         runs, info = plan_runs(args)
         policy_cmd = policy_command(args.policy_cmd) if args.policy_cmd is not None else None
     except ValueError as exc:
-        print(f"auditenv.run: {exc}", file=sys.stderr)
+        say(f"auditenv.run: {exc}")
         return 2
     problem = log_folder_problem(args)
     if problem:
-        print(f"auditenv.run: {problem}", file=sys.stderr)
+        say(f"auditenv.run: {problem}")
         return 2
     subprocess_policy = args.policy != "oracle"
     if subprocess_policy and args.sandbox == "required" and sandbox_user() is None:
         # One message, before any warning (QA L3).
-        print("auditenv.run: sandbox unavailable: run as root where the user auditpolicy exists (the Docker image)",
-              file=sys.stderr)
+        say("auditenv.run: sandbox unavailable: run as root where the user auditpolicy exists (the Docker image)")
         return 2
     if info is not None:
         try:
             build_check(runs, info)
         except ValueError as exc:
-            print(f"auditenv.run: {exc}", file=sys.stderr)
+            say(f"auditenv.run: {exc}")
             return 2
     if args.mode == "eval" and subprocess_policy and (args.sandbox == "off" or sandbox_user() is None):
-        print(NO_SANDBOX_WARNING, file=sys.stderr, flush=True)  # warn only: our own scripts run like this (QA N-3)
+        say(NO_SANDBOX_WARNING)  # warn only: our own scripts run like this (QA N-3)
     trajectory = grader = None
     try:
         trajectory = open_log(args.trajectories) if args.trajectories else None
         grader = open_log(args.grader_log) if args.grader_log else None
     except OSError as exc:  # e.g. no permission to write there
-        print(f"auditenv.run: cannot open {exc.filename}: {exc.strerror}", file=sys.stderr)
+        say(f"auditenv.run: cannot open {exc.filename}: {exc.strerror}")
         close_logs(trajectory, grader)
         return 2
     reports, counts = [], []
@@ -402,25 +456,28 @@ def main(argv=None):
                 result = run_policy(args.policy, env, seed, config, args.policy_seed, args.time_limit, text,
                                     args.sandbox, policy_cmd)
             except (ValueError, RuntimeError) as exc:  # broken config or episode directory, or no sandbox
-                print(f"auditenv.run: {where}{exc}", file=sys.stderr)
+                say(f"auditenv.run: {where}{exc}")
                 return 2
-            except OSError as exc:  # the policy command failed to start, e.g. the sandbox user cannot run it
-                print(f"auditenv.run: {where}cannot start the policy: {exc.strerror}: {exc.filename}",
-                      file=sys.stderr)
+            except OSError as exc:
+                if exc.filename == (policy_cmd[0] if policy_cmd else sys.executable):  # e.g. the sandbox user
+                    say(f"auditenv.run: {where}cannot start the policy: {exc.strerror}: {exc.filename}")
+                else:  # no room to build the episode or the policy's folder (QA L20)
+                    say(f"auditenv.run: {where}cannot run the episode: {exc.strerror}")
                 return 2
             counts.append(episode_counts(env, text.getvalue()))
             entry = env.grader_log[-1]
-            for f, line, path in ((trajectory, text.getvalue(), args.trajectories),
-                                  (grader, encode_line(entry), args.grader_log)):
-                if f is None:
-                    continue
-                try:
-                    f.write(line)
-                    f.flush()
-                except OSError as exc:  # a full disk: one line, and say where the logs stop (QA L19)
-                    print(f"auditenv.run: {where}cannot write {path}: {exc.strerror}; the logs are incomplete "
-                          f"from episode {entry.get('episode_id')} on", file=sys.stderr)
-                    return 2
+            logs = [(f, line.encode("utf-8"), path) for f, line, path in
+                    ((trajectory, text.getvalue(), args.trajectories), (grader, encode_line(entry), args.grader_log))
+                    if f is not None]
+            try:
+                write_episode([(f, data) for f, data, _ in logs])
+            except OSError as exc:  # a full disk: one line, and say where the logs stop (QA L19, L20)
+                failed = logs[getattr(exc, "log_index", 0)][2]
+                cut = all(_size_if_regular(f) is not None for f, _, _ in logs)
+                say(f"auditenv.run: {where}cannot write {failed}: {exc.strerror}; the logs end "
+                    + (f"before episode {entry.get('episode_id')}" if cut else
+                       f"in episode {entry.get('episode_id')}, which a FIFO or device may hold in part"))
+                return 2
             report = summary(args, seed, config, result, entry)
             if info is not None:
                 report["episode_set"] = info["version"]

@@ -1,5 +1,5 @@
 """The CLI under signals, a closed stdout and bad or full log paths, and the truncated count of a set run
-(QA L16, L17, L18, L19).
+(QA L16, L17, L18, L19, L20).
 
 Ctrl-C, SIGTERM and SIGHUP leave auditenv.run through its finally blocks with one line on stderr: the policy
 process group is killed and the temporary folders are removed, also during the check of a set, whose folder
@@ -153,6 +153,95 @@ class Robustness(unittest.TestCase):
                 self.assertEqual(proc.returncode, 2, proc.stderr)
                 self.assertEqual(len(proc.stderr.splitlines()), 1, proc.stderr)
                 self.assertNotIn("Traceback", proc.stderr)
+
+    def limited(self, kib):
+        """preexec_fn: no file of the runner may grow past `kib` KiB, as on a disk that fills up (QA L20)."""
+        import resource
+        return lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (kib * 1024, kib * 1024))
+
+    def test_no_room_for_the_generator_is_a_one_line_error(self):
+        for args, message in ((("--config", "configs/dev_v2.json", "--seed", "2000"),
+                               "episode set item 1 (seed 2000): cannot build the episode: File too large"),
+                              (("--config", "{}", "--seed", "1"), "cannot run the episode: File too large")):
+            with self.subTest(args=args):
+                proc = cli("--policy", "oracle", *args, tmpdir=self.tmpdir, preexec_fn=self.limited(40))
+                out, err = proc.communicate(timeout=120)
+                self.assertEqual((proc.returncode, out), (2, ""), err)
+                self.assertEqual(err, f"auditenv.run: {message}\n")
+                self.assertEqual(self.left_in_tmpdir(), [])
+
+    def test_a_log_that_hits_the_size_limit_is_cut_back_to_whole_lines(self):
+        traj, grader = self.root / "t.jsonl", self.root / "g.jsonl"
+        with open(traj, "w", encoding="utf-8") as f:
+            while f.tell() < 12000:
+                f.write(json.dumps({"earlier": "x" * 200}) + "\n")
+        before = traj.read_bytes()
+        proc = cli("--policy", "oracle", "--episode-dir", str(EPISODE), "--trajectories", str(traj),
+                   "--grader-log", str(grader), preexec_fn=self.limited(16))
+        _, err = proc.communicate(timeout=60)
+        self.assertEqual(proc.returncode, 2, err)
+        self.assertIn("File too large; the logs end before episode KARPSR", err)
+        self.assertEqual(traj.read_bytes(), before)            # whole lines only, as before the run
+        self.assertEqual(grader.read_bytes(), b"")
+
+    def test_a_signal_during_the_log_writes_cuts_both_logs_back(self):
+        from auditenv.run import write_episode
+        first = self.root / "first.jsonl"
+        first.write_bytes(b'{"a": 1}\n')
+
+        class Interrupted:
+            def __init__(self, f):
+                self.f = f
+
+            def fileno(self):
+                return self.f.fileno()
+
+            def write(self, data):
+                raise SystemExit(143)                            # SIGTERM between the two log writes
+
+        with open(first, "ab", buffering=0) as a, open(self.root / "second.jsonl", "ab", buffering=0) as b:
+            with self.assertRaises(SystemExit):
+                write_episode([(a, b'{"episode": 1}\n'), (Interrupted(b), b'{"entry": 1}\n')])
+        self.assertEqual(first.read_bytes(), b'{"a": 1}\n')
+
+    def test_sigquit_cleans_up_like_sigterm(self):
+        policy, report = self.hanging_policy()
+        proc = cli("--policy-cmd", f"{sys.executable} {policy}", "--episode-dir", str(EPISODE), "--mode", "train",
+                   "--sandbox", "off", tmpdir=self.tmpdir)
+        self.assertTrue(wait_for(lambda: report.exists() and report.read_text()), "the policy did not start")
+        pid = int(report.read_text())
+        proc.send_signal(signal.SIGQUIT)
+        _, err = proc.communicate(timeout=60)
+        self.assertEqual(proc.returncode, 128 + signal.SIGQUIT, err)
+        self.assertTrue(wait_for(lambda: not alive(pid), 10), "the policy outlived the runner")
+        self.assertEqual(self.left_in_tmpdir(), [])
+
+    def test_an_error_into_a_pipe_nobody_reads_keeps_exit_2(self):
+        """`2>&1 | true`: the one line cannot be delivered, the exit code must still say 2, not 120; also for a
+        bad flag, which argparse reports."""
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+        for args in (("--policy", "oracle", "--config", '{"bogus": 1}'), ("--policy", "oracle", "--config", "{}",
+                     "--seed", "x"), ("--policy", "oracle", "--policy-cmd", "x", "--config", "{}"), ()):
+            with self.subTest(args=args):
+                read_end, write_end = os.pipe()
+                os.close(read_end)
+                try:
+                    proc = subprocess.run([sys.executable, "-P", "-s", "-m", "auditenv.run", *args], cwd=ROOT,
+                                          env={**env, "PYTHONPATH": str(ROOT)}, stdout=write_end, stderr=write_end,
+                                          timeout=60)
+                finally:
+                    os.close(write_end)
+                self.assertEqual(proc.returncode, 2)
+
+    def test_no_usable_temporary_folder_for_the_set_check_is_a_one_line_error(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+        code = ("import sys, tempfile\ntempfile.tempdir = '/nonexistent/auditenv-test'\n"
+                "from auditenv.run import main\nsys.exit(main(['--policy', 'oracle', '--config', "
+                "'configs/dev_v2.json', '--seed', '2000']))\n")
+        proc = subprocess.run([sys.executable, "-P", "-s", "-c", code], cwd=ROOT, env={**env, "PYTHONPATH": str(ROOT)},
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual((proc.returncode, proc.stdout), (2, ""), proc.stderr)
+        self.assertEqual(proc.stderr, "auditenv.run: cannot build the episode set: No such file or directory\n")
 
     def test_a_hangup_ignored_at_start_stays_ignored(self):
         """Under nohup a SIGHUP must not stop the run."""
