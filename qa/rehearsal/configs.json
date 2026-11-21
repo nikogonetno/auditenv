@@ -1,0 +1,28 @@
+{
+  "version": "rehearsal_v1",
+  "comment": "Jury rehearsal of case §06 and §10 (docs/tasks/V_rehearsal.md, part A). Seeds 9000-9019, outside train (1000-1999), dev (2000-2999) and stress. Combinations absent from configs/train_v2.json, dev_v2.json and stress_v3.json: offsets with minutes, negative and +00:00, several offsets at once, documents at both ends of 20-200, foreign_pct 0, narrow and 100, twins at the maximum 20 in every mixed book. C1 only with period null or 2026-03, 06, 09, 11 (PM). 5 clean, 5 with C1 or C2, 10 mixed.",
+  "episodes": [
+    {"seed": 9000, "group": "clean", "config": {"errors": {}, "documents": [20, 20], "company_offsets": ["-05:00"], "twins": [20, 20]}},
+    {"seed": 9001, "group": "clean", "config": {"errors": {}, "documents": [200, 200], "foreign_pct": [90, 100], "company_offsets": ["+00:00"], "twins": [20, 20]}},
+    {"seed": 9002, "group": "clean", "config": {"errors": {}, "foreign_pct": [0, 0], "company_offsets": ["+05:45"], "period": "2026-02", "twins": [0, 0]}},
+    {"seed": 9003, "group": "clean", "config": {"errors": {}, "documents": [50, 80], "foreign_pct": [100, 100], "company_offsets": ["-10:00"], "period": "2026-01", "twins": [10, 20]}},
+    {"seed": 9004, "group": "clean", "config": {"errors": {}, "documents": [120, 140], "company_offsets": ["+08:00", "-03:30"], "period": "2026-12"}},
+
+    {"seed": 9005, "group": "coupled", "config": {"errors": {}, "scenarios": {"C1": 1}, "period": "2026-06", "foreign_pct": [20, 40], "company_offsets": ["-05:00"], "twins": [20, 20]}},
+    {"seed": 9006, "group": "coupled", "config": {"errors": {}, "scenarios": {"C2": 2}, "documents": [40, 60], "company_offsets": ["+00:00"], "twins": [20, 20]}},
+    {"seed": 9007, "group": "coupled", "config": {"errors": {"fx_rate": 1}, "scenarios": {"C1": 1, "C2": 1}, "period": "2026-11", "foreign_pct": [30, 70], "company_offsets": ["+05:45"], "twins": [20, 20]}},
+    {"seed": 9008, "group": "coupled", "config": {"errors": {}, "scenarios": {"C1": 2}, "documents": [180, 200], "foreign_pct": [50, 100], "company_offsets": ["-03:00", "+06:00"], "twins": [20, 20]}},
+    {"seed": 9009, "group": "coupled", "config": {"errors": {"duplicate_invoice": 1, "payment_allocation": 2}, "scenarios": {"C2": 1}, "period": "2026-03", "foreign_pct": [0, 0], "company_offsets": ["+04:00"], "twins": [20, 20]}},
+
+    {"seed": 9010, "group": "mixed", "config": {"errors": {"duplicate_invoice": 1, "payment_allocation": 1, "fx_rate": 1, "period_cutoff": 1}, "documents": [20, 30], "foreign_pct": [100, 100], "company_offsets": ["-08:00"], "twins": [20, 20]}},
+    {"seed": 9011, "group": "mixed", "config": {"errors": {"fx_rate": 4, "period_cutoff": 4}, "documents": [100, 120], "foreign_pct": [80, 100], "company_offsets": ["+00:00"], "period": "2026-01", "twins": [20, 20]}},
+    {"seed": 9012, "group": "mixed", "config": {"errors": {"duplicate_invoice": 6, "payment_allocation": 6}, "documents": [190, 200], "foreign_pct": [0, 10], "company_offsets": ["-11:00"], "twins": [20, 20]}},
+    {"seed": 9013, "group": "mixed", "config": {"errors": {"period_cutoff": 3}, "documents": [60, 90], "foreign_pct": [0, 0], "company_offsets": ["-01:00"], "period": "2026-02", "twins": [20, 20]}},
+    {"seed": 9014, "group": "mixed", "config": {"errors": {"duplicate_invoice": 2, "fx_rate": 2}, "documents": [120, 160], "foreign_pct": [40, 45], "company_offsets": ["+09:30"], "period": "2026-08", "twins": [20, 20]}},
+    {"seed": 9015, "group": "mixed", "config": {"errors": {"payment_allocation": 3, "period_cutoff": 2}, "documents": [70, 70], "company_offsets": ["-04:00", "+00:00", "+03:00"], "period": "2026-12", "twins": [20, 20]}},
+    {"seed": 9016, "group": "mixed", "config": {"errors": {"duplicate_invoice": 1, "fx_rate": 1}, "foreign_pct": [10, 90], "company_offsets": ["+02:00"], "period": "2026-04", "twins": [20, 20]}},
+    {"seed": 9017, "group": "mixed", "config": {"errors": {"duplicate_invoice": 3, "payment_allocation": 3, "fx_rate": 3, "period_cutoff": 3}, "documents": [150, 150], "foreign_pct": [55, 75], "company_offsets": ["-07:00"], "period": "2026-10", "twins": [20, 20]}},
+    {"seed": 9018, "group": "mixed", "config": {"errors": {"fx_rate": 1}, "documents": [25, 25], "foreign_pct": [5, 5], "company_offsets": ["+11:00"], "period": "2026-07", "twins": [20, 20]}},
+    {"seed": 9019, "group": "mixed", "config": {"errors": {"duplicate_invoice": 2, "payment_allocation": 1, "period_cutoff": 1}, "foreign_pct": [30, 30], "company_offsets": ["-09:00", "+14:00"], "period": "2026-05", "twins": [20, 20]}}
+  ]
+}
