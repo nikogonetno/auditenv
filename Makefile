@@ -33,7 +33,7 @@ demo:
 stress:
 	$(PY) scripts/stress.py --n $(N)
 
-# Open train and dev episodes (case §09) from configs/train_v1.json and configs/dev_v1.json.
+# Open train and dev episodes (case §09) from configs/train_v2.json and configs/dev_v2.json.
 episodes:
 	$(PY) scripts/build_episodes.py train
 	$(PY) scripts/build_episodes.py dev
