@@ -101,12 +101,13 @@ from auditenv.runner import run_subprocess_episode
 env = AuditEnv("train")                       # "eval" прячет награду от политики
 Path("runs").mkdir(exist_ok=True)
 with open("runs/my_policy.jsonl", "w", encoding="utf-8") as trajectory:
-    result = run_subprocess_episode([sys.executable, "my_policy.py"], env, 0,
+    result = run_subprocess_episode([sys.executable, str(Path("my_policy.py").resolve())], env, 0,
                                     {"episode_dir": "tests/fixtures/mini_v03"}, trajectory=trajectory)
 print(result, env.grader_log[-1]["reward"])
 ```
 
-Вместо `{"episode_dir": ...}` можно передать config генератора, например `{}`. Тогда эпизод строится по `seed` (третий аргумент).
+- **Путь к политике нужен абсолютный.** Раннер запускает процесс политики в пустой временной папке, а не в папке репозитория.
+- **Config.** Вместо `{"episode_dir": ...}` можно передать config генератора, например `{}`. Тогда эпизод строится по `seed`, это третий аргумент.
 
 Ниже настоящий обмен такой политики на `tests/fixtures/mini_v03` в режиме `train`. Длинные части заменены на `…`.
 
