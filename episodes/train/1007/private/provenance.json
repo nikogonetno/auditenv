@@ -1,0 +1,238 @@
+{
+  "config": {
+    "base_currency": "KZT",
+    "company_offsets": [
+      "+03:00",
+      "+04:00",
+      "+05:00",
+      "+06:00"
+    ],
+    "documents": [
+      150,
+      200
+    ],
+    "errors": {
+      "duplicate_invoice": 1,
+      "fx_rate": 1,
+      "payment_allocation": 1,
+      "period_cutoff": 0
+    },
+    "foreign_pct": [
+      0,
+      60
+    ],
+    "period": null,
+    "scenarios": {
+      "C1": 0,
+      "C2": 0
+    },
+    "twins": [
+      3,
+      8
+    ]
+  },
+  "config_sha256": "96f76c73eea58d33e22edd5a4c94d83849fdd91f6ff5076306285014727e1640",
+  "generator_version": "0.1.0",
+  "injections": [
+    {
+      "changes": [
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "invoice/ZR4MRG"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/0QSQD6"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/GCGHE5"
+        }
+      ],
+      "injection_id": "INJ-01",
+      "issue_ids": [
+        "T3J3JG"
+      ],
+      "order": 1,
+      "root_cause": "vendor bill keyed twice, the copy 0 days after issue with the reference retyped",
+      "scenario_id": null,
+      "variant": "same_vendor_ref_reformatted"
+    },
+    {
+      "changes": [
+        {
+          "after": 41234283,
+          "before": 80850945,
+          "field": "credit_minor",
+          "record": "ledger/9Y2P18"
+        },
+        {
+          "after": 69768,
+          "before": 136799,
+          "field": "doc_amount_minor",
+          "record": "ledger/9Y2P18"
+        },
+        {
+          "after": 295817,
+          "before": 580028,
+          "field": "credit_minor",
+          "record": "ledger/4W0J1Z"
+        },
+        {
+          "after": 295817,
+          "before": 580028,
+          "field": "doc_amount_minor",
+          "record": "ledger/4W0J1Z"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/P59ZM6"
+        }
+      ],
+      "injection_id": "INJ-02",
+      "issue_ids": [
+        "RBBFBH"
+      ],
+      "order": 2,
+      "root_cause": "allocation keyed as 69768 instead of 136799, the rest left on 3510",
+      "scenario_id": null,
+      "variant": "partial_allocation"
+    },
+    {
+      "changes": [
+        {
+          "after": 505595898,
+          "before": 506716022,
+          "field": "credit_minor",
+          "record": "ledger/Z9NYH8"
+        },
+        {
+          "after": "72.22",
+          "before": "72.38",
+          "field": "exchange_rate",
+          "record": "ledger/Z9NYH8"
+        },
+        {
+          "after": 505595898,
+          "before": 506716022,
+          "field": "debit_minor",
+          "record": "ledger/ZNAMX2"
+        },
+        {
+          "after": "72.22",
+          "before": "72.38",
+          "field": "exchange_rate",
+          "record": "ledger/ZNAMX2"
+        },
+        {
+          "after": 505595898,
+          "before": 506716022,
+          "field": "debit_minor",
+          "record": "ledger/G79CAZ"
+        },
+        {
+          "after": "72.22",
+          "before": "72.38",
+          "field": "exchange_rate",
+          "record": "ledger/G79CAZ"
+        },
+        {
+          "after": "7430",
+          "before": "6250",
+          "field": "account",
+          "record": "ledger/K6HDYN"
+        },
+        {
+          "after": 0,
+          "before": 350039,
+          "field": "credit_minor",
+          "record": "ledger/K6HDYN"
+        },
+        {
+          "after": 770085,
+          "before": 0,
+          "field": "debit_minor",
+          "record": "ledger/K6HDYN"
+        },
+        {
+          "after": 770085,
+          "before": 350039,
+          "field": "doc_amount_minor",
+          "record": "ledger/K6HDYN"
+        },
+        {
+          "after": "realized FX loss",
+          "before": "realized FX gain",
+          "field": "memo",
+          "record": "ledger/K6HDYN"
+        }
+      ],
+      "injection_id": "INJ-03",
+      "issue_ids": [
+        "PCT1D7"
+      ],
+      "order": 3,
+      "root_cause": "rate of the entry date 2026-01-01 used instead of the document date 2025-12-29",
+      "scenario_id": null,
+      "variant": "rate_of_entry_date"
+    }
+  ],
+  "other_lookalikes": {
+    "combined_payment": 1,
+    "late_entry": 6,
+    "midnight_utc": 1,
+    "monthly_subscription": 6,
+    "overpayment": 1,
+    "overpayment_and_refund": 1,
+    "real_partial_payment": 4,
+    "repeated_full_payment": 1,
+    "split_payment": 1,
+    "weekend_document": 3
+  },
+  "schema_version": "1.0",
+  "seed": 1007,
+  "twins": [
+    {
+      "distinguishing_feature": "entered after the period, posted on the document date",
+      "kind": "late_entry",
+      "mimics": "period_cutoff",
+      "records": [
+        "payment/KM9KPH"
+      ],
+      "twin_id": "TW-01"
+    },
+    {
+      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
+      "kind": "midnight_utc",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/XT4KYH"
+      ],
+      "twin_id": "TW-02"
+    },
+    {
+      "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
+      "kind": "weekend_document",
+      "mimics": "fx_rate",
+      "records": [
+        "invoice/Y6H0NV"
+      ],
+      "twin_id": "TW-03"
+    }
+  ],
+  "world": {
+    "documents": 157,
+    "foreign_pct": 47,
+    "industry": "logistics",
+    "period": "2026-01",
+    "timezone": "+04:00"
+  }
+}

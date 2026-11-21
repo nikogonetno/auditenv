@@ -2,6 +2,8 @@
 
     python3 scripts/paired.py EPISODE_DIR [EPISODE_DIR ...] [--n 20] [--transform auditenv.transform:permute_and_rename]
 
+An EPISODE_DIR may also be a split directory (episodes/dev): its episodes are taken in name order.
+
 Two kinds of check alternate, over the given episodes in turn, until n checks are done:
   repeat     one baseline policy (cycling random, reconcile, flag_all, oracle) runs twice on the same
              episode with the same seed and policy seed, each time in a fresh AuditEnv: the trajectories
@@ -11,8 +13,8 @@ Two kinds of check alternate, over the given episodes in turn, until n checks ar
              reward on both, the copy's truth has the same multiset of (type, expected_amount_minor,
              currency) as the original, and every id in either truth names a record of its episode
 
-Without the transform function (A's auditenv.transform) every check is a repeat check and the summary
-says the transform is skipped. Prints one JSON line per check and a summary line; exit 1 if any
+The default transform is auditenv.transform.permute_and_rename. Without a transform function every check is
+a repeat check and the summary says the transform is skipped. Prints one JSON line per check and a summary line; exit 1 if any
 check fails, 0 otherwise (a skip is not a failure), 2 on bad arguments.
 """
 import argparse
@@ -193,10 +195,18 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.n < 1:
         parser.error("--n must be at least 1")
-    for episode_dir in args.episodes:
-        if not Path(episode_dir).is_dir():
-            parser.error(f"not a directory: {episode_dir}")
-    _, summary = run_paired(args.episodes, args.n, load_transform(args.transform), out=sys.stdout)
+    episodes = []
+    for raw in args.episodes:
+        path = Path(raw)
+        if not path.is_dir():
+            parser.error(f"not a directory: {raw}")
+        # A split directory (episodes/dev) stands for its episodes in name order, as in scripts/metrics.py.
+        found = [path] if (path / "public").is_dir() else sorted(
+            (p for p in path.iterdir() if (p / "public").is_dir()), key=lambda p: p.name)
+        if not found:
+            parser.error(f"neither an episode nor a directory of episodes: {raw}")
+        episodes += found
+    _, summary = run_paired(episodes, args.n, load_transform(args.transform), out=sys.stdout)
     return 0 if summary["paired"] == "OK" else 1
 
 

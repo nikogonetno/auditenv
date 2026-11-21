@@ -160,6 +160,23 @@ class Metrics(unittest.TestCase):
         once = self.traj.read_text(encoding="utf-8")
         self.assertEqual(traj.read_text(encoding="utf-8"), once + once)
 
+    def test_reconcile_misses_are_split_into_rule_and_cap(self):
+        row = self.rows_of("reconcile", str(MINI))[0]
+        self.assertEqual(row["missed_by_rule"], [["period_cutoff", "XG1494"]])   # C1: the UTC date is in period
+        self.assertEqual(row["missed_by_cap"], [])
+        self.assertIn("## Пропуски сверки", self.markdown)
+        self.assertIn("## Сводка: эпизоды с ошибками", self.markdown)
+        self.assertIn("## Сводка: чистые эпизоды", self.markdown)
+
+    def test_the_diagnostic_spray_runs_in_process_and_writes_no_trajectory(self):
+        out, traj = self.root / "spray.md", self.root / "spray.jsonl"
+        proc = metrics(MINI, "--policies", "spray,oracle", "--out", out, "--trajectories", traj)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report = tables(out.read_text(encoding="utf-8"))
+        spray = next(row for row in report[SUMMARY] if row["политика"] == "spray")
+        self.assertEqual((spray["TP"], spray["FP"]), ("2", "2"))   # both boundary period errors of mini_v03
+        self.assertEqual(episode_starts(traj), 1)                    # only the oracle run
+
     def test_policies_option_selects_and_orders_the_rows(self):
         out = self.root / "two.md"
         proc = metrics(self.split / "a_tiny", "--policies", "oracle,flag_all", "--out", out)

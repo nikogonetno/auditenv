@@ -1,0 +1,42 @@
+{
+  "clean": false,
+  "episode_id": "2M8XXD",
+  "issues": [
+    {
+      "affected_ids": [
+        "ledger/KG4T3N"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "fx/7YD5PJ",
+          "invoice/0ZZ9TQ",
+          "ledger/KG4T3N"
+        ]
+      ],
+      "expected_amount_minor": 3878980,
+      "issue_id": "56FRSX",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "fx_rate"
+    },
+    {
+      "affected_ids": [
+        "ledger/0MHCAE"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "fx/12NC3H",
+          "invoice/PVP95B",
+          "ledger/0MHCAE"
+        ]
+      ],
+      "expected_amount_minor": 1201038,
+      "issue_id": "ZPC2R8",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "fx_rate"
+    }
+  ]
+}

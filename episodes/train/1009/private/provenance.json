@@ -1,0 +1,161 @@
+{
+  "config": {
+    "base_currency": "KZT",
+    "company_offsets": [
+      "+03:00",
+      "+04:00",
+      "+05:00",
+      "+06:00"
+    ],
+    "documents": [
+      150,
+      200
+    ],
+    "errors": {
+      "duplicate_invoice": 0,
+      "fx_rate": 2,
+      "payment_allocation": 0,
+      "period_cutoff": 0
+    },
+    "foreign_pct": [
+      0,
+      60
+    ],
+    "period": "2026-12",
+    "scenarios": {
+      "C1": 0,
+      "C2": 0
+    },
+    "twins": [
+      3,
+      8
+    ]
+  },
+  "config_sha256": "a9d253e76f8bea037acb5b25e94ea352ad7d5795760ff817aedd72d22ed3f5ef",
+  "generator_version": "0.1.0",
+  "injections": [
+    {
+      "changes": [
+        {
+          "after": 719644520,
+          "before": 715765540,
+          "field": "credit_minor",
+          "record": "ledger/KG4T3N"
+        },
+        {
+          "after": "499.06",
+          "before": "496.37",
+          "field": "exchange_rate",
+          "record": "ledger/KG4T3N"
+        },
+        {
+          "after": 719644520,
+          "before": 715765540,
+          "field": "debit_minor",
+          "record": "ledger/BD194V"
+        },
+        {
+          "after": "499.06",
+          "before": "496.37",
+          "field": "exchange_rate",
+          "record": "ledger/BD194V"
+        }
+      ],
+      "injection_id": "INJ-01",
+      "issue_ids": [
+        "56FRSX"
+      ],
+      "order": 1,
+      "root_cause": "rate of the entry date 2026-12-30 used instead of the document date 2026-12-28",
+      "scenario_id": null,
+      "variant": "rate_of_entry_date"
+    },
+    {
+      "changes": [
+        {
+          "after": 555157463,
+          "before": 556358501,
+          "field": "debit_minor",
+          "record": "ledger/0MHCAE"
+        },
+        {
+          "after": "499.21",
+          "before": "500.29",
+          "field": "exchange_rate",
+          "record": "ledger/0MHCAE"
+        },
+        {
+          "after": 555157463,
+          "before": 556358501,
+          "field": "credit_minor",
+          "record": "ledger/9ZD05V"
+        },
+        {
+          "after": "499.21",
+          "before": "500.29",
+          "field": "exchange_rate",
+          "record": "ledger/9ZD05V"
+        }
+      ],
+      "injection_id": "INJ-02",
+      "issue_ids": [
+        "ZPC2R8"
+      ],
+      "order": 2,
+      "root_cause": "rate of the entry date 2027-01-09 used instead of the document date 2027-01-06",
+      "scenario_id": null,
+      "variant": "rate_of_entry_date"
+    }
+  ],
+  "other_lookalikes": {
+    "combined_payment": 6,
+    "late_entry": 12,
+    "midnight_utc": 1,
+    "monthly_subscription": 8,
+    "overpayment": 2,
+    "overpayment_and_refund": 1,
+    "real_partial_payment": 3,
+    "repeated_full_payment": 2,
+    "split_payment": 1,
+    "unidentified_receipt": 2,
+    "weekend_document": 2
+  },
+  "schema_version": "1.0",
+  "seed": 1009,
+  "twins": [
+    {
+      "distinguishing_feature": "entered after the period, posted on the document date",
+      "kind": "late_entry",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/6ZEY1Y"
+      ],
+      "twin_id": "TW-01"
+    },
+    {
+      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
+      "kind": "midnight_utc",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/RQ6QNF"
+      ],
+      "twin_id": "TW-02"
+    },
+    {
+      "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
+      "kind": "weekend_document",
+      "mimics": "fx_rate",
+      "records": [
+        "payment/513B7X"
+      ],
+      "twin_id": "TW-03"
+    }
+  ],
+  "world": {
+    "documents": 161,
+    "foreign_pct": 31,
+    "industry": "it_services",
+    "period": "2026-12",
+    "timezone": "+04:00"
+  }
+}

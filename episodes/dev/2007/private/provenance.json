@@ -1,0 +1,297 @@
+{
+  "config": {
+    "base_currency": "KZT",
+    "company_offsets": [
+      "+03:00",
+      "+04:00",
+      "+05:00",
+      "+06:00"
+    ],
+    "documents": [
+      150,
+      200
+    ],
+    "errors": {
+      "duplicate_invoice": 0,
+      "fx_rate": 0,
+      "payment_allocation": 0,
+      "period_cutoff": 1
+    },
+    "foreign_pct": [
+      0,
+      60
+    ],
+    "period": null,
+    "scenarios": {
+      "C1": 1,
+      "C2": 1
+    },
+    "twins": [
+      3,
+      8
+    ]
+  },
+  "config_sha256": "6d1fd10c77eee2337632dc5b0db8c14e63cdc0e3708703f4f845723284449367",
+  "generator_version": "0.1.0",
+  "injections": [
+    {
+      "changes": [
+        {
+          "after": "2026-06-30T12:00:00+03:00",
+          "before": "2026-07-01T12:00:00+03:00",
+          "field": "timestamp",
+          "record": "ledger/334RBT"
+        },
+        {
+          "after": "2026-06-30T12:00:00+03:00",
+          "before": "2026-07-01T12:00:00+03:00",
+          "field": "timestamp",
+          "record": "ledger/RQVM3X"
+        }
+      ],
+      "injection_id": "INJ-01",
+      "issue_ids": [
+        "7BYVN4"
+      ],
+      "order": 1,
+      "root_cause": "document of 2026-07-01 posted on the last day of the period 2026-06-30",
+      "scenario_id": null,
+      "variant": "pulled_into_period"
+    },
+    {
+      "changes": [
+        {
+          "after": 422763000,
+          "before": 424281000,
+          "field": "debit_minor",
+          "record": "ledger/QM4RGR"
+        },
+        {
+          "after": "5.57",
+          "before": "5.59",
+          "field": "exchange_rate",
+          "record": "ledger/QM4RGR"
+        },
+        {
+          "after": "2026-06-30T12:00:00+03:00",
+          "before": "2026-07-01T12:00:00+03:00",
+          "field": "timestamp",
+          "record": "ledger/QM4RGR"
+        },
+        {
+          "after": 323030400,
+          "before": 425040000,
+          "field": "credit_minor",
+          "record": "ledger/764WBB"
+        },
+        {
+          "after": 57684000,
+          "before": 75900000,
+          "field": "doc_amount_minor",
+          "record": "ledger/764WBB"
+        },
+        {
+          "after": "2026-06-30T12:00:00+03:00",
+          "before": "2026-07-01T12:00:00+03:00",
+          "field": "timestamp",
+          "record": "ledger/764WBB"
+        },
+        {
+          "after": 1730520,
+          "before": 759000,
+          "field": "debit_minor",
+          "record": "ledger/G7AJ7G"
+        },
+        {
+          "after": 1730520,
+          "before": 759000,
+          "field": "doc_amount_minor",
+          "record": "ledger/G7AJ7G"
+        },
+        {
+          "after": "2026-06-30T12:00:00+03:00",
+          "before": "2026-07-01T12:00:00+03:00",
+          "field": "timestamp",
+          "record": "ledger/G7AJ7G"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/QQYQBQ"
+        }
+      ],
+      "injection_id": "INJ-02",
+      "issue_ids": [
+        "24MBYJ",
+        "4V6AV6",
+        "WXNAZQ"
+      ],
+      "order": 2,
+      "root_cause": "bank UTC date 2026-06-30 used as the posting date instead of the company date 2026-07-01, the system took that date's rate; allocation keyed as 57684000 instead of 75900000, the rest left on 3510",
+      "root_causes": [
+        {
+          "cause": "bank UTC date 2026-06-30 used as the posting date instead of the company date 2026-07-01, the system took that date's rate",
+          "issue_ids": [
+            "4V6AV6",
+            "WXNAZQ"
+          ]
+        },
+        {
+          "cause": "allocation keyed as 57684000 instead of 75900000, the rest left on 3510",
+          "issue_ids": [
+            "24MBYJ"
+          ]
+        }
+      ],
+      "scenario_id": "C1",
+      "variant": "utc_date_as_posting_date+partial_allocation"
+    },
+    {
+      "changes": [
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "invoice/3Z287G"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/2ZZD3D"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/AGGDQR"
+        },
+        {
+          "after": [
+            "3Z287G",
+            "ZYT7DN"
+          ],
+          "before": [
+            "ZYT7DN"
+          ],
+          "field": "invoice_refs",
+          "record": "payment/VG2XJH"
+        },
+        {
+          "after": "3Z287G",
+          "before": "ZYT7DN",
+          "field": "invoice_id",
+          "record": "ledger/54XXWF"
+        }
+      ],
+      "injection_id": "INJ-03",
+      "issue_ids": [
+        "KDGJG8"
+      ],
+      "order": 3,
+      "root_cause": "vendor bill keyed twice; the payment, whose reference names both records, was allocated to the copy",
+      "scenario_id": "C2",
+      "variant": "duplicate_then_paid"
+    }
+  ],
+  "other_lookalikes": {
+    "combined_payment": 7,
+    "late_entry": 10,
+    "midnight_utc": 1,
+    "monthly_subscription": 4,
+    "real_partial_payment": 1,
+    "repeated_full_payment": 1,
+    "weekend_document": 2
+  },
+  "schema_version": "1.0",
+  "seed": 2007,
+  "twins": [
+    {
+      "distinguishing_feature": "the payment names both records and is allocated in full to the copy; the only error is the duplicate",
+      "kind": "c2_trap",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/ZYT7DN",
+        "payment/VG2XJH"
+      ],
+      "twin_id": "TW-01"
+    },
+    {
+      "distinguishing_feature": "one payment cites two different bills of the vendor and settles both",
+      "kind": "combined_payment",
+      "mimics": "duplicate_invoice",
+      "records": [
+        "invoice/GTXTVY",
+        "invoice/X5Y6BD",
+        "payment/M4XZPH"
+      ],
+      "twin_id": "TW-02"
+    },
+    {
+      "distinguishing_feature": "entered after the period, posted on the document date",
+      "kind": "late_entry",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/T29E38"
+      ],
+      "twin_id": "TW-03"
+    },
+    {
+      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
+      "kind": "midnight_utc",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/TE30HJ"
+      ],
+      "twin_id": "TW-04"
+    },
+    {
+      "distinguishing_feature": "same vendor and amount, other vendor_ref and service month",
+      "kind": "monthly_subscription",
+      "mimics": "duplicate_invoice",
+      "records": [
+        "invoice/FM0FD7",
+        "invoice/JNHJEK"
+      ],
+      "twin_id": "TW-05"
+    },
+    {
+      "distinguishing_feature": "payment above the invoice, the excess on 3510, later refunded out of 3510 with no invoice named",
+      "kind": "overpayment_and_refund",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/VBHFTC",
+        "payment/383DMT",
+        "payment/X50EDC"
+      ],
+      "twin_id": "TW-06"
+    },
+    {
+      "distinguishing_feature": "bank amount below the invoice, the whole payment allocated",
+      "kind": "real_partial_payment",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/4WN56S",
+        "payment/8SZEAA"
+      ],
+      "twin_id": "TW-07"
+    },
+    {
+      "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
+      "kind": "weekend_document",
+      "mimics": "fx_rate",
+      "records": [
+        "invoice/TP0Q92"
+      ],
+      "twin_id": "TW-08"
+    }
+  ],
+  "world": {
+    "documents": 194,
+    "foreign_pct": 54,
+    "industry": "logistics",
+    "period": "2026-06",
+    "timezone": "+03:00"
+  }
+}

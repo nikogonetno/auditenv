@@ -1,6 +1,6 @@
 """Diagnostic metrics of the baseline policies (case §10; docs/tasks/B_next.md item 11).
 
-    python3 scripts/metrics.py EPISODE_DIR [EPISODE_DIR ...] [--policies random,reconcile,flag_all,oracle]
+    python3 scripts/metrics.py EPISODE_DIR [EPISODE_DIR ...] [--policies random,reconcile,flag_all,oracle,spray]
                                [--mode eval] [--seed 0] [--out docs/METRICS.md] [--json runs/metrics.json]
                                [--trajectories runs/trajectories.jsonl]
 
@@ -9,8 +9,11 @@ subdirectories are episodes, taken in sorted order. Every policy runs on every e
 auditenv.run.run_policy with the same env seed and policy seed 0. The grade comes from the grader log
 and truth from the env's grader side: this is the evaluator's report and never reaches a policy.
 
-P, R and F1 are micro over all episodes with the case §05 rules, return is the mean terminal reward.
-Per type, TP and FN go by the type of the truth issue and FP by the type of the false finding.
+P, R and F1 are micro over all episodes with the case §05 rules, return is the mean terminal reward,
+shown for the episodes with errors, the clean ones and the mix. Per type, TP and FN go by the type of the
+truth issue and FP by the type of the false finding. A reconcile miss is split into a miss of its rules
+(no rule finds the issue in the whole book) and a miss of the 30-finding cap. `spray` is the diagnostic
+boundary spray of policies/spray.py (PM E-32), run in this process; it is not a jury baseline.
 Writes the markdown report to --out, the raw rows as JSON lines to --json (overwritten), appends the
 trajectories to --trajectories and prints the summary table. Only the wall times differ between runs.
 """
@@ -31,7 +34,13 @@ from auditenv.env import MODES, AuditEnv  # noqa: E402
 from auditenv.grader import f1_score  # noqa: E402
 from auditenv.private_args import hide_private_args  # noqa: E402
 from auditenv.run import POLICIES, run_policy  # noqa: E402
-from auditenv.runner import encode_line  # noqa: E402
+from auditenv.episode import load_episode  # noqa: E402
+from auditenv.grader import score  # noqa: E402
+from auditenv.runner import encode_line, run_inprocess_episode  # noqa: E402
+from policies.reconcile import RULES, Book  # noqa: E402
+from policies.spray import SprayPolicy  # noqa: E402
+
+DIAGNOSTIC_POLICIES = ("spray",)
 
 POLICY_SEED = 0
 OTHER_TYPE = "other"  # a false finding whose type is none of the four, or that could not be read
@@ -42,9 +51,10 @@ SUMMARY_HEADER = ("политика", "эпизоды", "TP", "FP", "FN", "P", "
 
 def parse_policies(text):
     names = [name.strip() for name in text.split(",") if name.strip()]
-    unknown = [name for name in names if name not in POLICIES]
+    known = (*POLICIES, *DIAGNOSTIC_POLICIES)
+    unknown = [name for name in names if name not in known]
     if not names or unknown or len(set(names)) != len(names):
-        raise argparse.ArgumentTypeError(f"a comma-separated list of distinct names from {', '.join(POLICIES)}")
+        raise argparse.ArgumentTypeError(f"a comma-separated list of distinct names from {', '.join(known)}")
     return names
 
 
@@ -132,21 +142,40 @@ def grade_row(policy, source, env, result, findings):
     return row
 
 
+def reconcile_rule_misses(source, env):
+    """Truth issues that no reconcile rule finds anywhere in the whole book, without the 30-finding cap."""
+    episode = load_episode(source)
+    book = Book(episode.manifest, episode.tables)
+    every = [f for rule in RULES for f in rule(book) if f is not None]
+    found = {m["issue_id"] for m in score(every, env._truth, 0, episode.aliases)["matched"]}
+    return {i["issue_id"] for i in env._truth.get("issues") or [] if i["issue_id"] not in found}
+
+
 def run_all(episodes, policies, mode, seed, trajectories=None):
     rows = []
     for source in episodes:
         for policy in policies:
             env, trajectory = AuditEnv(mode), io.StringIO()
             try:
-                result = run_policy(policy, env, seed, {"episode_dir": str(source)}, POLICY_SEED,
-                                    trajectory=trajectory)
+                if policy in DIAGNOSTIC_POLICIES:
+                    result = run_inprocess_episode(SprayPolicy(), env, seed, {"episode_dir": str(source)},
+                                                   trajectory=trajectory)
+                else:
+                    result = run_policy(policy, env, seed, {"episode_dir": str(source)}, POLICY_SEED,
+                                        trajectory=trajectory)
             except (ValueError, RuntimeError) as exc:  # broken episode, or no sandbox when required
                 raise ValueError(f"{source}: {exc}") from None
             text = trajectory.getvalue()
-            if trajectories is not None:
+            if trajectories is not None and policy not in DIAGNOSTIC_POLICIES:
                 trajectories.write(text)
                 trajectories.flush()
-            rows.append(grade_row(policy, source, env, result, submitted_findings(text)))
+            row = grade_row(policy, source, env, result, submitted_findings(text))
+            if policy == "reconcile":
+                by_rule = reconcile_rule_misses(source, env)
+                kind = {i["issue_id"]: i["type"] for i in env._truth.get("issues") or []}
+                row["missed_by_rule"] = sorted([kind[i], i] for i in row["missed"] if i in by_rule)
+                row["missed_by_cap"] = sorted([kind[i], i] for i in row["missed"] if i not in by_rule)
+            rows.append(row)
     return rows
 
 
@@ -206,6 +235,24 @@ def summary_table(rows, policies):
     return table(SUMMARY_HEADER, body)
 
 
+def group_table(rows, policies):
+    return summary_table(rows, policies) if rows else ["Таких эпизодов нет."]
+
+
+def misses_table(rows):
+    """Reconcile misses by type: of its rules and of the 30-finding cap."""
+    mine = [r for r in rows if r["policy"] == "reconcile" and "missed_by_rule" in r]
+    if not mine:
+        return []
+    body = []
+    for kind in ISSUE_TYPES:
+        rule = sum(t == kind for r in mine for t, _ in r["missed_by_rule"])
+        cap = sum(t == kind for r in mine for t, _ in r["missed_by_cap"])
+        body.append([kind, rule, cap, rule + cap])
+    body.append(["всего", *(sum(b[k] for b in body) for k in (1, 2, 3))])
+    return table(("тип", "пропуски правила", "пропуски лимита 30", "всего FN"), body)
+
+
 def episode_rows(rows, policies):
     """(episode_id, clean, issues, {policy: reward}) per episode run, in run order."""
     blocks = [rows[k:k + len(policies)] for k in range(0, len(rows), len(policies))]
@@ -236,6 +283,14 @@ def report(rows, args, policies):
         "",
         *summary_table(rows, policies),
         "",
+        "## Сводка: эпизоды с ошибками",
+        "",
+        *group_table([r for r in rows if not r["clean"]], policies),
+        "",
+        "## Сводка: чистые эпизоды",
+        "",
+        *group_table([r for r in rows if r["clean"]], policies),
+        "",
         "## По типам ошибок",
         "",
         "TP и FN по типу ошибки эталона, FP по типу ложного вывода, чистые эпизоды дают только FP.",
@@ -247,6 +302,16 @@ def report(rows, args, policies):
         for kind, counts in per_type_totals(rows, policy).items():
             body.append([policy, kind, counts["tp"], counts["fn"], counts["fp"]])
     lines += table(("политика", "тип", "TP", "FN", "FP"), body, text_columns=2)
+    misses = misses_table(rows)
+    if misses:
+        lines += ["", "## Пропуски сверки", "",
+                  "Пропуск правила: ни одно из четырёх правил сверки не находит ошибку во всей книге. Пропуск лимита:",
+                  "правило её находит, но вывод не попал в 30 отправленных (кейс §05).", "", *misses]
+    if any(p in DIAGNOSTIC_POLICIES for p in policies):
+        lines += ["", "## Умный спрей", "",
+                  "`spray` это диагностика (PM, E-32), не базовая политика жюри: несущие строки в пределах двух дней",
+                  "от конца периода как ошибки периода, до 30. Условие приёмки кейса §05: «пометить всё» не выше",
+                  "молчания на каждом эпизоде; спрей показан, чтобы видеть цену угадывания у границы периода."]
     lines += ["", "## По эпизодам", "", "Возврат каждой политики на каждом эпизоде, в порядке прогона.", ""]
     body = [[episode_id, "да" if is_clean else "нет", issues, *(fmt(rewards[p]) for p in policies)]
             for episode_id, is_clean, issues, rewards in episodes]

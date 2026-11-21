@@ -9,7 +9,7 @@ so the order of injections never changes truth.
 from dataclasses import dataclass, field
 
 from ..config import ISSUE_TYPES
-from . import allocation, duplicate, period, rate
+from . import allocation, duplicate, period, rate, scenarios
 
 
 @dataclass
@@ -26,6 +26,7 @@ class Injection:
     issues: list
     docs: set                     # documents whose records this injection changed or created
     scenario: str = None
+    causes: list = None           # [(root cause, [index of an issue it gives])], one per cause of a scenario
 
 
 @dataclass
@@ -43,15 +44,22 @@ INJECTORS = {
     "fx_rate": (rate, 0, {"foreign_invoices": 1}),
     "period_cutoff": (period, 0, {"period_bills": 1, "period_moves": 1}),
 }
+# scenario -> (injector, documents it adds, anchors it needs). C1 moves its payment across the period end.
+SCENARIOS = {
+    "C1": (scenarios.c1, 0, {"c1_receipts": 1, "period_moves": 1}),
+    "C2": (scenarios.c2, 1, {"c2_bills": 1}),
+}
 
 
 def plan(config):
     """What the clean world must hold for the errors of a normalized config. ValueError if one is not
     generated yet."""
-    for scenario, count in sorted(config["scenarios"].items()):
-        if count:
-            raise ValueError(f"config: scenario {scenario} is not generated yet")
     result = Plan()
+    for scenario, count in sorted(config["scenarios"].items()):
+        _, adds, needs = SCENARIOS[scenario]
+        result.reserved_documents += adds * count
+        for name, n in needs.items():
+            result.anchors[name] = result.anchors.get(name, 0) + n * count
     for kind in ISSUE_TYPES:
         count = config["errors"][kind]
         if not count:
@@ -79,4 +87,14 @@ def inject_errors(rng, world, config):
             variant, cause, issues, docs = module.inject(rng, world, used | others)
             used.update(docs)
             injections.append(Injection(variant, cause, [Issue(kind, tuple(sorted(a))) for a in issues], set(docs)))
+    for name, (injector, _, _) in SCENARIOS.items():
+        others = {key for key, owner in world.anchors.items() if owner != name}
+        for _ in range(config["scenarios"][name]):
+            variant, causes, issues, docs = injector(rng, world, used | others)
+            used.update(docs)
+            if isinstance(causes, str):
+                causes = [(causes, list(range(len(issues))))]
+            injections.append(Injection(variant, "; ".join(text for text, _ in causes),
+                                        [Issue(t, tuple(sorted(a)), name) for t, a in issues], set(docs), name,
+                                        causes))
     return injections

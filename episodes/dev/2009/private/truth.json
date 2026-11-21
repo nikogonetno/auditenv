@@ -1,0 +1,23 @@
+{
+  "clean": false,
+  "episode_id": "N66GMB",
+  "issues": [
+    {
+      "affected_ids": [
+        "ledger/9XNW9Z"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/WRWXDY",
+          "ledger/9XNW9Z"
+        ]
+      ],
+      "expected_amount_minor": 147476000,
+      "issue_id": "4ZWJ5M",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "clean": false,
+  "episode_id": "YK8145",
+  "issues": [
+    {
+      "affected_ids": [
+        "invoice/HS2ZVJ",
+        "payment/HVF8KA"
+      ],
+      "currency": "RUB",
+      "evidence_sets": [
+        [
+          "invoice/HS2ZVJ",
+          "ledger/764WBB",
+          "ledger/QQYQBQ",
+          "payment/HVF8KA"
+        ]
+      ],
+      "expected_amount_minor": 18216000,
+      "issue_id": "24MBYJ",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "payment_allocation"
+    },
+    {
+      "affected_ids": [
+        "ledger/QM4RGR"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "ledger/QM4RGR",
+          "payment/HVF8KA"
+        ]
+      ],
+      "expected_amount_minor": 422763000,
+      "issue_id": "4V6AV6",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    },
+    {
+      "affected_ids": [
+        "ledger/334RBT"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/X3326B",
+          "ledger/334RBT"
+        ]
+      ],
+      "expected_amount_minor": 252000000,
+      "issue_id": "7BYVN4",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    },
+    {
+      "affected_ids": [
+        "invoice/3Z287G",
+        "invoice/ZYT7DN"
+      ],
+      "currency": "USD",
+      "evidence_sets": [
+        [
+          "invoice/3Z287G",
+          "invoice/ZYT7DN",
+          "ledger/2ZZD3D",
+          "ledger/XRWZPM"
+        ]
+      ],
+      "expected_amount_minor": 1095540,
+      "issue_id": "KDGJG8",
+      "scenario_id": "C2",
+      "tolerance_minor": 1,
+      "type": "duplicate_invoice"
+    },
+    {
+      "affected_ids": [
+        "ledger/QM4RGR"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "fx/EFS2S9",
+          "ledger/QM4RGR",
+          "payment/HVF8KA"
+        ]
+      ],
+      "expected_amount_minor": 1518000,
+      "issue_id": "WXNAZQ",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "fx_rate"
+    }
+  ]
+}

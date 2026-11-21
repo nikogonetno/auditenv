@@ -129,6 +129,11 @@ class TransformCli(unittest.TestCase):
         self.assertIn("truth of the copy names ids with no record: ['ledger/", rows[1]["detail"])
         self.assertNotIn("truth of the original", rows[1]["detail"])
 
+    def test_the_real_transform_is_the_default_and_passes_on_mini(self):
+        code, rows, summary, _ = paired_cli(MINI, "--n", "4")
+        self.assertEqual(code, 0, rows)
+        self.assertEqual((summary["paired"], summary["transform"], summary["repeat"]), ("OK", 2, 2))
+
     def test_missing_transform_module_is_a_skip_not_a_failure(self):
         code, rows, summary, _ = paired_cli(MINI, "--n", "2", "--transform", "tests.no_such_module:permute_and_rename")
         self.assertEqual(code, 0)

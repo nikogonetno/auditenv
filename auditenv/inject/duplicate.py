@@ -30,6 +30,25 @@ def reformat(rng, world, bill):
     return rng.choice(vendor or seen or options)
 
 
+def make_copy(rng, world, bill, keyed_before=None):
+    """A second record of `bill` as another clerk keys it, added to the world. `keyed_before`: a moment the
+    copy must be keyed before (a payment allocated to the copy comes after it, C2)."""
+    twin = copy.deepcopy(bill)
+    twin.key = world.new_key("I")
+    for line in twin.lines:
+        line.key = world.new_key("N")
+    twin.vendor_ref = reformat(rng, world, bill)
+    event = bill.issued_at.astimezone(world.tz)
+    for _ in range(200):                         # the clean entry delay, redrawn until it fits
+        twin.entered_at = entered_time(rng, world, event)
+        if keyed_before is None or twin.entered_at < keyed_before:
+            break
+    else:
+        twin.entered_at = event + (keyed_before - event) / 2
+    world.invoices[twin.key] = twin
+    return twin
+
+
 def inject(rng, world, used):
     """(variant, cause, [affected keys], documents touched). ValueError when no bill can be copied.
 
@@ -48,14 +67,8 @@ def inject(rng, world, used):
     # Small books: prefer bills whose retyped reference can take a shape the clean bills show.
     bill = rng.choice([c for c in candidates if _options(world, c)[1]] or candidates)
     citing = sorted(cited_by.get(bill.key, ()))
-    twin = copy.deepcopy(bill)
-    twin.key = world.new_key("I")
-    for line in twin.lines:
-        line.key = world.new_key("N")
-    twin.vendor_ref = reformat(rng, world, bill)
+    twin = make_copy(rng, world, bill)
     event = bill.issued_at.astimezone(world.tz)
-    twin.entered_at = entered_time(rng, world, event)
-    world.invoices[twin.key] = twin
     days = (twin.entered_at.date() - event.date()).days
     cause = f"vendor bill keyed twice, the copy {days} days after issue with the reference retyped"
     return VARIANT, cause, [(bill.key, twin.key)], {bill.key, twin.key, *citing}

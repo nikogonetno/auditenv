@@ -1,0 +1,77 @@
+{
+  "accounts": [
+    {
+      "code": "1030",
+      "name": "Bank"
+    },
+    {
+      "code": "1210",
+      "name": "Accounts receivable"
+    },
+    {
+      "code": "3310",
+      "name": "Accounts payable"
+    },
+    {
+      "code": "3510",
+      "name": "Advances received"
+    },
+    {
+      "code": "6010",
+      "name": "Revenue"
+    },
+    {
+      "code": "6250",
+      "name": "FX gain"
+    },
+    {
+      "code": "7110",
+      "name": "Cost of services"
+    },
+    {
+      "code": "7210",
+      "name": "Administrative expenses"
+    },
+    {
+      "code": "7430",
+      "name": "FX loss"
+    }
+  ],
+  "allocation_rule": "a payment whose remittance_info names exactly one open document group of the same counterparty and currency must be allocated to it up to the open amount, the rest goes to 3510",
+  "base_currency": "KZT",
+  "company_utc_offset": "+05:00",
+  "duplicate_rule": "two AP invoices of one counterparty with equal currency, total and normalized vendor_ref",
+  "fx": {
+    "date_rule": "posting_date_rule date",
+    "holidays": [
+      "2026-08-31"
+    ],
+    "non_business_fallback": "previous business day",
+    "quote": "base units per 1 unit of currency",
+    "rounding": "ROUND_HALF_UP to 1 minor unit",
+    "settlement": "clearing rows use the invoice rate, last allocation clears the base residual, difference to 6250 or 7430",
+    "weekend_days": [
+      6,
+      7
+    ]
+  },
+  "ledger_window": {
+    "from": "2026-07-25",
+    "to": "2026-09-07"
+  },
+  "minor_units": {
+    "CNY": 2,
+    "EUR": 2,
+    "KZT": 2,
+    "RUB": 2,
+    "USD": 2
+  },
+  "period": {
+    "end_local": "2026-08-31",
+    "end_utc_exclusive": "2026-08-31T19:00:00Z",
+    "start_local": "2026-08-01",
+    "start_utc": "2026-07-31T19:00:00Z"
+  },
+  "posting_date_rule": "company-local date of invoice.issued_at or payment.timestamp",
+  "vendor_ref_normalization": "uppercase, keep A-Z and 0-9 only"
+}

@@ -1,0 +1,128 @@
+{
+  "config": {
+    "base_currency": "KZT",
+    "company_offsets": [
+      "+03:00",
+      "+04:00",
+      "+05:00",
+      "+06:00"
+    ],
+    "documents": [
+      150,
+      200
+    ],
+    "errors": {
+      "duplicate_invoice": 0,
+      "fx_rate": 0,
+      "payment_allocation": 0,
+      "period_cutoff": 0
+    },
+    "foreign_pct": [
+      0,
+      0
+    ],
+    "period": null,
+    "scenarios": {
+      "C1": 0,
+      "C2": 0
+    },
+    "twins": [
+      3,
+      8
+    ]
+  },
+  "config_sha256": "18c0abcd29ccb5c75e293d2821491aa899299d6624ee09c95a4d3fed5aa85eb3",
+  "generator_version": "0.1.0",
+  "injections": [],
+  "other_lookalikes": {
+    "combined_payment": 6,
+    "late_entry": 4,
+    "midnight_utc": 1,
+    "monthly_subscription": 4,
+    "real_partial_payment": 2,
+    "repeated_full_payment": 2,
+    "split_payment": 1,
+    "unidentified_receipt": 1
+  },
+  "schema_version": "1.0",
+  "seed": 1005,
+  "twins": [
+    {
+      "distinguishing_feature": "one payment cites two different bills of the vendor and settles both",
+      "kind": "combined_payment",
+      "mimics": "duplicate_invoice",
+      "records": [
+        "invoice/N14ZT0",
+        "invoice/WYFEYC",
+        "payment/NJ73C8"
+      ],
+      "twin_id": "TW-01"
+    },
+    {
+      "distinguishing_feature": "entered after the period, posted on the document date",
+      "kind": "late_entry",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/VMGKFG"
+      ],
+      "twin_id": "TW-02"
+    },
+    {
+      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
+      "kind": "midnight_utc",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/JTR12A"
+      ],
+      "twin_id": "TW-03"
+    },
+    {
+      "distinguishing_feature": "same vendor and amount, other vendor_ref and service month",
+      "kind": "monthly_subscription",
+      "mimics": "duplicate_invoice",
+      "records": [
+        "invoice/DK8TXY",
+        "invoice/RGBHJA"
+      ],
+      "twin_id": "TW-04"
+    },
+    {
+      "distinguishing_feature": "payment above the open amount, the excess lies on 3510",
+      "kind": "overpayment",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/E32C3M",
+        "payment/KK9S0R"
+      ],
+      "twin_id": "TW-05"
+    },
+    {
+      "distinguishing_feature": "payment above the invoice, the excess on 3510, later refunded out of 3510 with no invoice named",
+      "kind": "overpayment_and_refund",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/457VCC",
+        "payment/6TAJXS",
+        "payment/B9GH92"
+      ],
+      "twin_id": "TW-06"
+    },
+    {
+      "distinguishing_feature": "bank amount below the invoice, the whole payment allocated",
+      "kind": "real_partial_payment",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/Y1Q6V7",
+        "payment/K6KE5Y"
+      ],
+      "twin_id": "TW-07"
+    }
+  ],
+  "world": {
+    "documents": 191,
+    "foreign_pct": 0,
+    "industry": "wholesale",
+    "period": "2026-08",
+    "timezone": "+06:00"
+  }
+}

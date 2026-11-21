@@ -1,0 +1,25 @@
+{
+  "base_currency": "KZT",
+  "counts": {
+    "fx": 208,
+    "invoices": 124,
+    "ledger": 377,
+    "payments": 53
+  },
+  "documents": 177,
+  "episode_id": "Y44QAK",
+  "period_end": "2026-07-31",
+  "period_start": "2026-07-01",
+  "rounding": {
+    "minor_units": {
+      "CNY": 2,
+      "EUR": 2,
+      "KZT": 2,
+      "RUB": 2,
+      "USD": 2
+    },
+    "mode": "ROUND_HALF_UP"
+  },
+  "schema_version": "1.0",
+  "timezone": "+03:00"
+}

@@ -1,0 +1,166 @@
+{
+  "config": {
+    "base_currency": "KZT",
+    "company_offsets": [
+      "+03:00",
+      "+04:00",
+      "+05:00",
+      "+06:00"
+    ],
+    "documents": [
+      150,
+      200
+    ],
+    "errors": {
+      "duplicate_invoice": 0,
+      "fx_rate": 0,
+      "payment_allocation": 1,
+      "period_cutoff": 0
+    },
+    "foreign_pct": [
+      0,
+      60
+    ],
+    "period": null,
+    "scenarios": {
+      "C1": 0,
+      "C2": 1
+    },
+    "twins": [
+      3,
+      8
+    ]
+  },
+  "config_sha256": "b65ecacd72691aa3c5ef78c2fc91e32f0310fc8ad012c77e7c4dc4dec3418bd0",
+  "generator_version": "0.1.0",
+  "injections": [
+    {
+      "changes": [
+        {
+          "after": 215394440,
+          "before": 331375940,
+          "field": "credit_minor",
+          "record": "ledger/FM10BP"
+        },
+        {
+          "after": 215394440,
+          "before": 331375940,
+          "field": "doc_amount_minor",
+          "record": "ledger/FM10BP"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/XE8HHB"
+        }
+      ],
+      "injection_id": "INJ-01",
+      "issue_ids": [
+        "A55NZ2"
+      ],
+      "order": 1,
+      "root_cause": "allocation keyed as 215394440 instead of 331375940, the rest left on 3510",
+      "scenario_id": null,
+      "variant": "partial_allocation"
+    },
+    {
+      "changes": [
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "invoice/RJNRYS"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/8D760H"
+        },
+        {
+          "after": "created",
+          "before": null,
+          "field": null,
+          "record": "ledger/YD31Q6"
+        },
+        {
+          "after": [
+            "MABJBJ",
+            "RJNRYS"
+          ],
+          "before": [
+            "MABJBJ"
+          ],
+          "field": "invoice_refs",
+          "record": "payment/15CXTM"
+        },
+        {
+          "after": "RJNRYS",
+          "before": "MABJBJ",
+          "field": "invoice_id",
+          "record": "ledger/AMDQS5"
+        }
+      ],
+      "injection_id": "INJ-02",
+      "issue_ids": [
+        "PAPZWZ"
+      ],
+      "order": 2,
+      "root_cause": "vendor bill keyed twice; the payment, whose reference names both records, was allocated to the copy",
+      "scenario_id": "C2",
+      "variant": "duplicate_then_paid"
+    }
+  ],
+  "other_lookalikes": {
+    "combined_payment": 7,
+    "late_entry": 5,
+    "midnight_utc": 2,
+    "monthly_subscription": 4,
+    "overpayment_and_refund": 1,
+    "real_partial_payment": 2,
+    "repeated_full_payment": 2,
+    "split_payment": 1,
+    "unidentified_receipt": 2,
+    "weekend_document": 1
+  },
+  "schema_version": "1.0",
+  "seed": 1003,
+  "twins": [
+    {
+      "distinguishing_feature": "the payment names both records and is allocated in full to the copy; the only error is the duplicate",
+      "kind": "c2_trap",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/MABJBJ",
+        "payment/15CXTM"
+      ],
+      "twin_id": "TW-01"
+    },
+    {
+      "distinguishing_feature": "entered after the period, posted on the document date",
+      "kind": "late_entry",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/ZBAHP7"
+      ],
+      "twin_id": "TW-02"
+    },
+    {
+      "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
+      "kind": "weekend_document",
+      "mimics": "fx_rate",
+      "records": [
+        "invoice/VZR55E"
+      ],
+      "twin_id": "TW-03"
+    }
+  ],
+  "world": {
+    "documents": 165,
+    "foreign_pct": 46,
+    "industry": "it_services",
+    "period": "2026-08",
+    "timezone": "+05:00"
+  }
+}
