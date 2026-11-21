@@ -389,8 +389,18 @@ class DomainReview(unittest.TestCase):
     def test_holidays_of_2026_are_the_official_calendar_with_transfers(self):
         from auditenv.world import HOLIDAYS
         self.assertEqual({d.isoformat() for d in HOLIDAYS if d.year == 2026}, self.OFFICIAL_2026)
+        # Rate tables of January and December books reach into the neighbour years: 16 December 2025 only,
+        # and in 2027 Saturday 2 January moves to Monday 4 January.
+        self.assertEqual({d.isoformat() for d in HOLIDAYS if d.year != 2026},
+                         {"2025-12-16", "2027-01-01", "2027-01-04", "2027-01-07"})
         with tempfile.TemporaryDirectory() as tmp:
-            for period in ("2026-03", "2026-05", "2026-12"):
+            out = Path(tmp) / "2026-12"
+            generate_episode(1, {"period": "2026-12", "errors": {}}, str(out))
+            policy = json.loads((out / "public" / "policy.json").read_text(encoding="utf-8"))
+            self.assertIn("2027-01-04", policy["fx"]["holidays"])
+            with open(out / "public" / "fx.csv", encoding="utf-8") as f:
+                self.assertFalse([r for r in csv.DictReader(f) if r["date"] == "2027-01-04"])
+            for period in ("2026-01", "2026-03", "2026-05", "2026-12"):
                 out = Path(tmp) / period
                 generate_episode(1, {"period": period, "errors": {}}, str(out))
                 policy = json.loads((out / "public" / "policy.json").read_text(encoding="utf-8"))
@@ -399,6 +409,30 @@ class DomainReview(unittest.TestCase):
                     self.assertTrue(published & self.OFFICIAL_2026)
                     self.assertTrue({d for d in published if d.startswith("2026")} <= self.OFFICIAL_2026)
                     self.assertNotIn("2026-12-17", published)
+                    self.assertNotIn("2025-12-17", published)
+
+    def test_off_day_ceiling_holds_when_no_earlier_business_day_fits(self):
+        """25 March is a holiday and the first day of an April window, 1 May the first day after the period:
+        free invoices there move later to a business day (default config, seed 5032 was 6.19%)."""
+        import datetime as dt
+        with tempfile.TemporaryDirectory() as tmp:
+            for seed, config in ((5032, {}), *((300 + n, {"period": "2026-04", "errors": {}}) for n in range(6))):
+                out = Path(tmp) / str(seed)
+                generate_episode(seed, config, str(out))
+                invoices, payments, _, _, _ = read_episode(out)
+                policy = json.loads((out / "public" / "policy.json").read_text(encoding="utf-8"))
+                tz = dt.datetime.fromisoformat("2026-01-01T00:00:00" + policy["company_utc_offset"]).tzinfo
+                holidays = set(policy["fx"]["holidays"])
+
+                def off(ts):
+                    day = dt.datetime.fromisoformat(ts).astimezone(tz).date()
+                    return day.isoweekday() in policy["fx"]["weekend_days"] or day.isoformat() in holidays
+
+                days = [off(i["issued_at"]) for i in invoices] + [off(p["timestamp"]) for p in payments]
+                with self.subTest(seed=seed):
+                    self.assertTrue(0.02 <= sum(days) / len(days) <= 0.06, sum(days) / len(days))
+                    moment = dt.datetime.fromisoformat
+                    self.assertTrue(all(moment(i["issued_at"]) < moment(i["entered_at"]) for i in invoices))
 
     def test_account_7110_is_selling_expenses(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -435,7 +469,7 @@ class DomainReview(unittest.TestCase):
                 with self.subTest(config=config):
                     self.assertTrue(texts)
                     for text in texts:
-                        if "keyed twice" in text and not config["errors"]:
+                        if not config["errors"]:              # C1 and C2 alone: no ordinary duplicate
                             self.assertNotIn("copy", text)
                         self.assertNotIn("typo", text)
                         self.assertNotIn("keyed as", text)

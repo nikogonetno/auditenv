@@ -111,8 +111,10 @@ def main(argv=None):
     print("2. documents on weekends and holidays")
     for name, config in (("150-200 documents, default config", {}), ("20-30 documents, clean", {"documents": [20, 30], "errors": {}})):
         shares = off_day_shares(config, args.seeds, 5000)
-        outside = sum(not 0.02 <= s <= 0.06 for s in shares)
-        print(f"   {name:35} min {min(shares):.1%} max {max(shares):.1%} outside 2-6%: {outside} of {len(shares)}")
+        outside = sorted(s for s in shares if not 0.02 <= s <= 0.06)
+        print(f"   {name:35} min {min(shares):.1%} max {max(shares):.1%} outside 2-6%: {len(outside)} of {len(shares)}")
+        if len(outside) <= 5:
+            print("   " + " " * 35 + " outside: " + (" ".join(f"{s:.2%}" for s in outside) or "none"))
     target, clean = entry_delays(args.seeds, 6000)
     print("3. entry delay of fx_rate targets vs clean invoices with a delay of at least one day")
     for name, counts in (("fx_rate targets", target), ("clean invoices", clean)):
