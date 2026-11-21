@@ -217,17 +217,31 @@ class Robustness(unittest.TestCase):
         self.assertEqual(self.left_in_tmpdir(), [])
 
     def test_an_error_into_a_pipe_nobody_reads_keeps_exit_2(self):
-        """`2>&1 | true`: the one line cannot be delivered, the exit code must still say 2, not 120."""
-        read_end, write_end = os.pipe()
-        os.close(read_end)
+        """`2>&1 | true`: the one line cannot be delivered, the exit code must still say 2, not 120; also for a
+        bad flag, which argparse reports."""
         env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-        try:
-            proc = subprocess.run([sys.executable, "-P", "-s", "-m", "auditenv.run", "--policy", "oracle", "--config",
-                                   '{"bogus": 1}'], cwd=ROOT, env={**env, "PYTHONPATH": str(ROOT)},
-                                  stdout=write_end, stderr=write_end, timeout=60)
-        finally:
-            os.close(write_end)
-        self.assertEqual(proc.returncode, 2)
+        for args in (("--policy", "oracle", "--config", '{"bogus": 1}'), ("--policy", "oracle", "--config", "{}",
+                     "--seed", "x"), ("--policy", "oracle", "--policy-cmd", "x", "--config", "{}"), ()):
+            with self.subTest(args=args):
+                read_end, write_end = os.pipe()
+                os.close(read_end)
+                try:
+                    proc = subprocess.run([sys.executable, "-P", "-s", "-m", "auditenv.run", *args], cwd=ROOT,
+                                          env={**env, "PYTHONPATH": str(ROOT)}, stdout=write_end, stderr=write_end,
+                                          timeout=60)
+                finally:
+                    os.close(write_end)
+                self.assertEqual(proc.returncode, 2)
+
+    def test_no_usable_temporary_folder_for_the_set_check_is_a_one_line_error(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+        code = ("import sys, tempfile\ntempfile.tempdir = '/nonexistent/auditenv-test'\n"
+                "from auditenv.run import main\nsys.exit(main(['--policy', 'oracle', '--config', "
+                "'configs/dev_v2.json', '--seed', '2000']))\n")
+        proc = subprocess.run([sys.executable, "-P", "-s", "-c", code], cwd=ROOT, env={**env, "PYTHONPATH": str(ROOT)},
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual((proc.returncode, proc.stdout), (2, ""), proc.stderr)
+        self.assertEqual(proc.stderr, "auditenv.run: cannot build the episode set: No such file or directory\n")
 
     def test_a_hangup_ignored_at_start_stays_ignored(self):
         """Under nohup a SIGHUP must not stop the run."""

@@ -50,9 +50,18 @@ NO_SANDBOX_WARNING = ("auditenv.run: WARNING: eval run without the sandbox: the 
                       "\"Закрытый прогон жюри\"")
 
 
+class Parser(argparse.ArgumentParser):
+    """argparse whose usage errors go straight to fd 2, as every other error line of the runner: a stderr
+    nobody reads (`2>&1 | true`) must not turn exit 2 into 120 (QA L20)."""
+
+    def error(self, message):
+        say(self.format_usage().rstrip("\n") + f"\n{self.prog}: error: {message}")
+        raise SystemExit(2)
+
+
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(prog="python -m auditenv.run", description=__doc__.split("\n\n")[0],
-                                     allow_abbrev=False)  # see auditenv.private_args
+    parser = Parser(prog="python -m auditenv.run", description=__doc__.split("\n\n")[0],
+                    allow_abbrev=False)  # see auditenv.private_args
     who = parser.add_mutually_exclusive_group(required=True)
     who.add_argument("--policy", choices=POLICIES)
     who.add_argument("--policy-cmd", metavar="COMMAND",
@@ -178,7 +187,10 @@ def build_check(runs, info):
     its item number (QA M5). ValueError naming the item."""
     import tempfile                                    # only the set path needs it
     from .generate import generate_episode
-    root = tempfile.mkdtemp(prefix="auditenv-set-check-")
+    try:
+        root = tempfile.mkdtemp(prefix="auditenv-set-check-")
+    except OSError as exc:  # no usable temporary folder, or no room in it (QA L20)
+        raise ValueError(f"cannot build the episode set: {exc.strerror}") from None
     try:
         for seed, config in runs:
             try:
@@ -307,6 +319,10 @@ def _stop(signum, frame):
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), signal.SIG_IGN)   # the cleanup itself must not be cut short
     say(f"auditenv.run: stopped by signal {signum}")  # a closed stderr must not change the exit code
+    try:  # a report line cut short in the stdout buffer must not fail again at exit (exit 120)
+        os.dup2(os.open(os.devnull, os.O_WRONLY), 1)
+    except OSError:
+        pass
     raise SystemExit(128 + signum)
 
 
