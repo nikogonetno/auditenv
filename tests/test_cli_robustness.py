@@ -1,9 +1,11 @@
-"""The CLI under signals and with bad log paths, and the truncated count of a set run (QA L16, L17, L18).
+"""The CLI under signals, a closed stdout and bad or full log paths, and the truncated count of a set run
+(QA L16, L17, L18, L19).
 
-SIGTERM or SIGHUP leaves auditenv.run through its finally blocks, as Ctrl-C does: the policy process group is
-killed and the temporary folders are removed, also during the check of a set, whose folder holds built
-episodes with private/. A log path in a missing folder is a one-line error before anything runs, and an
-existing log file becomes 0600.
+Ctrl-C, SIGTERM and SIGHUP leave auditenv.run through its finally blocks with one line on stderr: the policy
+process group is killed and the temporary folders are removed, also during the check of a set, whose folder
+holds built episodes with private/. A closed stdout stops the run quietly. A log path in a missing folder is a
+one-line error before anything runs, a full disk a one-line error during it, and an existing log file becomes
+0600.
 """
 import glob
 import json
@@ -95,6 +97,62 @@ class Robustness(unittest.TestCase):
         self.assertEqual(proc.returncode, 128 + signal.SIGTERM, err)
         self.assertTrue(wait_for(lambda: not alive(pid), 10), "the policy outlived the runner")
         self.assertEqual(self.left_in_tmpdir(), [])
+
+    def test_ctrl_c_stops_with_one_line_and_no_traceback(self):
+        """QA L19: Ctrl-C behaves as SIGTERM does: cleanup, one line on stderr, exit 130."""
+        policy, report = self.hanging_policy()
+        proc = cli("--policy-cmd", f"{sys.executable} {policy}", "--episode-dir", str(EPISODE), "--mode", "train",
+                   "--sandbox", "off", tmpdir=self.tmpdir)
+        self.assertTrue(wait_for(lambda: report.exists() and report.read_text()), "the policy did not start")
+        pid = int(report.read_text())
+        proc.send_signal(signal.SIGINT)
+        out, err = proc.communicate(timeout=60)
+        self.assertEqual((proc.returncode, out), (128 + signal.SIGINT, ""))
+        self.assertEqual(err, f"auditenv.run: stopped by signal {int(signal.SIGINT)}\n")
+        self.assertTrue(wait_for(lambda: not alive(pid), 10), "the policy outlived the runner")
+        self.assertEqual(self.left_in_tmpdir(), [])
+
+    @unittest.skipUnless(os.path.exists("/dev/full"), "needs /dev/full (Linux)")
+    def test_a_full_disk_is_a_one_line_error(self):
+        """QA L19: a log write that fails says so in one line, with exit 2, and names where the logs stop."""
+        for flag in ("--trajectories", "--grader-log"):
+            with self.subTest(flag=flag):
+                proc = cli("--policy", "oracle", "--episode-dir", str(EPISODE), flag, "/dev/full")
+                out, err = proc.communicate(timeout=60)
+                self.assertEqual((proc.returncode, out), (2, ""))
+                self.assertEqual(len(err.splitlines()), 1, err)
+                self.assertIn("cannot write /dev/full: No space left on device", err)
+
+    def test_a_closed_stdout_stops_the_set_quietly(self):
+        """QA L19: `| head -1` stops the run as a SIGPIPE would, without a traceback or exit code 120."""
+        dev = json.loads((ROOT / "configs" / "dev_v2.json").read_text(encoding="utf-8"))
+        set_file = self.root / "three.json"
+        set_file.write_text(json.dumps({"version": "three", "episodes": dev["episodes"][:3]}), encoding="utf-8")
+        proc = cli("--policy", "oracle", "--config", str(set_file), tmpdir=self.tmpdir)
+        self.assertTrue(json.loads(proc.stdout.readline())["episode_id"])
+        proc.stdout.close()                              # the reader goes away after the first line
+        err = proc.stderr.read()
+        proc.wait(timeout=60)
+        proc.stderr.close()
+        self.assertEqual(proc.returncode, 128 + 13, err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(self.left_in_tmpdir(), [])
+
+    def test_a_closed_or_full_stdout_is_a_one_line_error(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+        base = [sys.executable, "-P", "-s", "-m", "auditenv.run", "--policy", "oracle", "--episode-dir", str(EPISODE)]
+        cases = [("closed", {"stdout": None, "pass_fds": (), "preexec_fn": lambda: os.close(1)})]
+        if os.path.exists("/dev/full"):
+            cases.append(("full", {"stdout": open("/dev/full", "w")}))
+        for name, extra in cases:
+            with self.subTest(stdout=name):
+                proc = subprocess.run(base, cwd=ROOT, env={**env, "PYTHONPATH": str(ROOT)}, stderr=subprocess.PIPE,
+                                      text=True, timeout=60, **extra)
+                if extra.get("stdout") is not None:
+                    extra["stdout"].close()
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertEqual(len(proc.stderr.splitlines()), 1, proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
 
     def test_a_hangup_ignored_at_start_stays_ignored(self):
         """Under nohup a SIGHUP must not stop the run."""
