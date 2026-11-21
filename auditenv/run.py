@@ -26,6 +26,7 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import sys
 from fractions import Fraction
 
@@ -236,6 +237,9 @@ def set_summary(info, reports, counts):
     tp, fp, fn = (sum(c[k] for c in counts) for k in range(3))
     return {"episode_set": info["version"], "split": info["split"], "episodes": len(reports),
             "code_version": __version__, "invalid": sum(r.get("tp") is None for r in reports),
+            # Episodes that ended without a submit: time limit, 100 steps or a policy that closed its output
+            # (QA L16). They are graded as an empty answer, so on a clean company they still score.
+            "truncated": sum(bool(r.get("truncated")) for r in reports),
             "tp": tp, "fp": fp, "fn": fn,
             "precision": float(Fraction(tp, tp + fp)) if tp + fp else 0.0,
             "recall": float(Fraction(tp, tp + fn)) if tp + fn else 0.0,
@@ -276,15 +280,54 @@ def load_config(text):
     return config
 
 
+def _stop(signum, frame):
+    """SIGTERM or SIGHUP: leave through every finally block, as Ctrl-C does, so the policy process group is
+    killed and the temporary folders (the policy's, the set check's) are removed (QA L17)."""
+    for name in ("SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), signal.SIG_IGN)   # the cleanup itself must not be cut short
+    print(f"auditenv.run: stopped by signal {signum}", file=sys.stderr, flush=True)
+    raise SystemExit(128 + signum)
+
+
+def open_log(path):
+    """A log file opened for appending, mode 0600 also when it existed before (QA L15, L17)."""
+    f = open(path, "a", encoding="utf-8", newline="\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:  # someone else's file: appending is allowed, changing its mode is not
+        pass
+    return f
+
+
+def log_folder_problem(args):
+    """A message when a log path cannot be written, checked before any episode runs (QA L18)."""
+    for flag, path in (("--trajectories", args.trajectories), ("--grader-log", args.grader_log)):
+        if path:
+            folder = os.path.dirname(os.path.abspath(path))
+            if not os.path.isdir(folder):
+                return f"{flag}: folder {folder} does not exist"
+            if os.path.isdir(path):
+                return f"{flag}: {path} is a folder"
+    return None
+
+
 def main(argv=None):
     # The seed and config never stay in this process's command line (QA N-1).
     args = parse_args(hide_private_args() if argv is None else argv)
     os.umask(0o077)  # trajectories and the grader log stay unreadable for the sandbox user
+    for name in ("SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), _stop)
     try:
         runs, info = plan_runs(args)
         policy_cmd = policy_command(args.policy_cmd) if args.policy_cmd is not None else None
     except ValueError as exc:
         print(f"auditenv.run: {exc}", file=sys.stderr)
+        return 2
+    problem = log_folder_problem(args)
+    if problem:
+        print(f"auditenv.run: {problem}", file=sys.stderr)
         return 2
     subprocess_policy = args.policy != "oracle"
     if subprocess_policy and args.sandbox == "required" and sandbox_user() is None:
@@ -300,7 +343,16 @@ def main(argv=None):
             return 2
     if args.mode == "eval" and subprocess_policy and (args.sandbox == "off" or sandbox_user() is None):
         print(NO_SANDBOX_WARNING, file=sys.stderr, flush=True)  # warn only: our own scripts run like this (QA N-3)
-    trajectory = open(args.trajectories, "a", encoding="utf-8", newline="\n") if args.trajectories else None
+    trajectory = grader = None
+    try:
+        trajectory = open_log(args.trajectories) if args.trajectories else None
+        grader = open_log(args.grader_log) if args.grader_log else None
+    except OSError as exc:  # e.g. no permission to write there
+        print(f"auditenv.run: cannot open {exc.filename}: {exc.strerror}", file=sys.stderr)
+        for f in (trajectory, grader):
+            if f is not None:
+                f.close()
+        return 2
     reports, counts = [], []
     try:
         for seed, config in runs:
@@ -321,9 +373,9 @@ def main(argv=None):
                 trajectory.flush()
             counts.append(episode_counts(env, text.getvalue()))
             entry = env.grader_log[-1]
-            if args.grader_log:
-                with open(args.grader_log, "a", encoding="utf-8", newline="\n") as f:
-                    f.write(encode_line(entry))
+            if grader is not None:
+                grader.write(encode_line(entry))
+                grader.flush()
             report = summary(args, seed, config, result, entry)
             if info is not None:
                 report["episode_set"] = info["version"]
@@ -331,8 +383,9 @@ def main(argv=None):
             sys.stdout.write(encode_line(report))
             sys.stdout.flush()
     finally:
-        if trajectory is not None:
-            trajectory.close()
+        for f in (trajectory, grader):
+            if f is not None:
+                f.close()
         hand_back([args.trajectories, args.grader_log])
     if info is not None and args.seed is None:
         sys.stdout.write(encode_line(set_summary(info, reports, counts)))
