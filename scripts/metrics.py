@@ -100,7 +100,7 @@ def grade_row(policy, source, env, result, findings):
     if "tp" in entry:
         tp, fp, fn, matched = entry["tp"], entry["fp"], entry["fn"], entry["matched"]
     else:  # a findings.json with a broken structure: reward -1, nothing matched (case §05)
-        (tp, fp, fn), matched = broken_submit_counts(findings, issues), []
+        (tp, fp, fn), matched = broken_submit_counts(entry.get("submitted_findings", len(findings)), issues), []
     matched_issues = {m["issue_id"] for m in matched}
     matched_findings = {m["finding_index"] for m in matched}
 
@@ -287,7 +287,8 @@ def report(rows, args, policies):
         "P, R и F1 микро по всем эпизодам, правила кейса §05: при нулевом знаменателе P и R равны 0,",
         "F1 равен 1, только если пусты и эталон, и ответы. Возврат это средняя терминальная награда. Шаги это",
         "вызовы `step` вместе с submit, шаги до submit это `inspection_steps`. Обрезано: эпизод кончился по лимиту",
-        "шагов или времени. Неверная структура: findings.json отклонён с наградой −1, его выводы считаются FP.",
+        "шагов или времени. Неверная структура: findings.json отклонён с наградой −1, TP 0, его выводы считаются FP,",
+        "но не меньше одного, и все ошибки эталона считаются FN.",
         "Время это среднее время эпизода, единственное невоспроизводимое число.",
         "",
         *summary_table(rows, policies),

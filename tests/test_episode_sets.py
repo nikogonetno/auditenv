@@ -117,17 +117,57 @@ class EpisodeSets(unittest.TestCase):
     def test_a_bad_item_stops_the_set_before_any_episode(self):
         """QA M5 and L13: every item is checked first; the message names the item; nothing is written."""
         traj = self.root / "t.jsonl"
+        def plus(item):
+            return {**self.pair, "episodes": [*self.pair["episodes"], item]}
+
         for broken, message in (
-                ({**self.pair, "episodes": [*self.pair["episodes"], {"seed": 5, "config": {"errors": {"fraud": 1}}}]},
+                (plus({"seed": 5, "config": {"errors": {"fraud": 1}}}),
                  "episode set item 3 (seed 5): unknown config.errors key: fraud"),
+                (plus({"seed": -5, "config": {}}), "episode set item 3 (seed -5): must be"),
+                (plus({"seed": 2000, "config": {}}), "episode set items 1 and 3 repeat seed 2000"),
+                # Only the generator rejects these two; they must still stop the set before its first episode.
+                (plus({"seed": 7, "config": {"documents": [20, 20]}}),
+                 "episode set item 3 (seed 7): config: documents 20-20 cannot hold the requested errors"),
+                (plus({"seed": 8, "config": {"company_offsets": ["+00:00"], "errors": {}, "scenarios": {"C1": 1}}}),
+                 "episode set item 3 (seed 8): config: C1 needs a company offset other than +00:00"),
                 ({"episodes": self.pair["episodes"]}, "an episode set needs a non-empty string version"),
+                ({"version": "v", "split": "dev"}, "an episode set needs a non-empty list episodes"),
+                (json.loads((ROOT / "configs" / "stress_v3.json").read_text(encoding="utf-8")),
+                 "a list of configs for scripts/stress.py"),
                 ({**self.pair, "split": 1}, "episode set key split must be a string")):
             with self.subTest(message=message):
+                traj.unlink(missing_ok=True)                   # each case on its own
                 self.set_file.write_text(json.dumps(broken), encoding="utf-8")
                 proc = run_cli("--policy", "oracle", "--config", str(self.set_file), "--trajectories", str(traj))
                 self.assertEqual((proc.returncode, proc.stdout), (2, ""))
                 self.assertIn(message, proc.stderr)
                 self.assertFalse(traj.exists())
+
+    def test_an_oversize_broken_submit_counts_all_its_findings(self):
+        """A submit over 64 KB is recorded as a digest in the trajectory; its findings still count as FP."""
+        clean = {"version": "clean", "episodes": [{"seed": 1, "config": {"errors": {}}}]}
+        self.set_file.write_text(json.dumps(clean), encoding="utf-8")
+        policy = self.root / "oversize.py"
+        policy.write_text("import json, sys\nsys.stdin.readline()\n"
+                          "f = [{'type': 'x', 'explanation': 'y' * 3000}] * 25\n"
+                          "print(json.dumps({'action': 'submit', 'findings': {'episode_id': 'WRONG', 'findings': f}}), "
+                          "flush=True)\nsys.stdin.readline()\n", encoding="utf-8")
+        traj = self.root / "t.jsonl"
+        proc = run_cli("--policy-cmd", f"{sys.executable} {policy}", "--config", str(self.set_file), "--mode", "train",
+                       "--sandbox", "off", "--trajectories", str(traj))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("oversize_action", traj.read_text(encoding="utf-8"))
+        total = lines(proc.stdout)[-1]
+        self.assertEqual((total["invalid"], total["fp"], total["f1"]), (1, 25, 0.0))
+
+    def test_the_broken_submit_count_stays_on_the_grader_side(self):
+        from auditenv.env import AuditEnv
+        env = AuditEnv("train")
+        env.reset(seed=0, config={"episode_dir": str(ROOT / "tests" / "fixtures" / "mini_v03")})
+        _, reward, terminated, _, info = env.step({"action": "submit", "findings": {
+            "episode_id": "WRONG", "findings": [{"type": "x"}, {"type": "y"}]}})
+        self.assertEqual((reward, terminated, env.grader_log[-1]["submitted_findings"]), (-1.0, True, 2))
+        self.assertNotIn("submitted_findings", json.dumps(info))
 
     def test_the_mean_reward_is_exact(self):
         """QA L14: no float noise such as 0.39999999999999997 for the rewards 0.1 and 0.7."""
