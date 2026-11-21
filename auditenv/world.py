@@ -21,11 +21,14 @@ BASE = "KZT"
 FOREIGN = ("CNY", "EUR", "RUB", "USD")
 MINOR_UNITS = {c: 2 for c in (BASE, *FOREIGN)}
 WEEKEND_DAYS = (6, 7)                    # ISO weekday numbers, date.isoweekday(): Saturday, Sunday
-# Synthetic non-business days. Only those inside the rate table reach policy.json.
+# Non-business days. Only those inside the rate table reach policy.json.
+# Official calendar of Kazakhstan for 2026 (eGov) with its transfers: Nauryz 21-22 March fell on a weekend
+# and moved to 24-25 March, Kurban ait is 27 May; Independence Day is one day, 16 December, since 2022.
+# The rate tables of December books reach into January 2027: 2 January 2027 is a Saturday and moves to 4 January.
 HOLIDAYS = tuple(dt.date.fromisoformat(d) for d in (
-    "2025-12-16", "2025-12-17", "2026-01-01", "2026-01-02", "2026-01-07", "2026-03-09", "2026-03-23",
-    "2026-03-24", "2026-05-01", "2026-05-07", "2026-05-11", "2026-07-06", "2026-08-31", "2026-10-26",
-    "2026-12-16", "2026-12-17", "2027-01-01", "2027-01-07"))
+    "2025-12-16", "2026-01-01", "2026-01-02", "2026-01-07", "2026-03-09", "2026-03-23", "2026-03-24",
+    "2026-03-25", "2026-05-01", "2026-05-07", "2026-05-11", "2026-05-27", "2026-07-06", "2026-08-31",
+    "2026-10-26", "2026-12-16", "2027-01-01", "2027-01-04", "2027-01-07"))
 WINDOW_DAYS = 7
 NEIGHBOUR_INVOICES = 6                   # per side of the period: 12 rows, INV-03 asks for 10; more when
                                          # an error moves documents out of the neighbour count (anchors)
@@ -46,7 +49,7 @@ CENTS_SHARE_FOREIGN, CENTS_SHARE_BASE = 0.5, 0.2
 # with probability OFF_DAY_KEEP while the quota lasts, otherwise redrawn (documents) or moved to the next
 # business day (bank value dates, monthly bills). The planted foreign weekend look-alike uses the quota too.
 OFF_DAY_PERMILLE = (25, 55)
-OFF_DAY_FLOOR, OFF_DAY_CEIL = 20, 60     # per mille of the book's documents, enforced at the end of the build
+OFF_DAY_FLOOR, OFF_DAY_CEIL = 20, 60     # per mille of the book, aimed at before the errors (_off_day_share)
 OFF_DAY_KEEP = 0.25
 _DECIMAL = Context(prec=34, rounding=ROUND_HALF_UP, Emin=-999999, Emax=999999, capitals=1, clamp=0, flags=[],
                    traps=[InvalidOperation, DivisionByZero, Overflow])
@@ -66,7 +69,7 @@ ACCOUNTS = (
     ("3510", "Advances received"),
     ("6010", "Revenue"),
     ("6250", "FX gain"),
-    ("7110", "Cost of services"),
+    ("7110", "Selling expenses"),
     ("7210", "Administrative expenses"),
     ("7430", "FX loss"),
 )
@@ -647,7 +650,8 @@ def _amount_lines(rng, world, currency, descriptions, fixed_total=None):
         else:
             qty = rng.choice((1, 1, 1, 2, 3, 4, 5, 10))
             unit = _price(rng, currency, rng.randint(low, high) // (qty * count))
-        text = rng.choice(descriptions).format(a=rng.choice(CITIES), b=rng.choice(CITIES))
+        origin, destination = rng.sample(CITIES, 2)          # a route never ends where it starts
+        text = rng.choice(descriptions).format(a=origin, b=destination)
         lines.append(Line(world.new_key("N"), text, qty, unit))
     return lines
 
@@ -1007,8 +1011,10 @@ def build_world(rng, config, reserved_documents=0, anchors=None):
         months = [m for m in range(1, 13) if c1_boundary_ok(2026, m)]
         period = config["period"] or f"2026-{rng.choice(months):02d}"
         if int(period[5:]) not in months:
-            raise ValueError(f"config: C1 needs a period whose last day and the next day are business days, "
-                             f"{period} has none")
+            allowed = ", ".join(f"2026-{m:02d}" for m in months)
+            raise ValueError(f"config: C1 needs a period whose last day and the next day are business days with "
+                             f"their own rates; {period} has none. Months that fit: {allowed}. With period null "
+                             f"the generator picks one of them")
     else:
         period = config["period"] or f"2026-{rng.randint(1, 12):02d}"
     year, month = int(period[:4]), int(period[5:])
@@ -1254,7 +1260,10 @@ def _off_day_share(world, documents):
     """Keep weekend and holiday documents between OFF_DAY_FLOOR and OFF_DAY_CEIL of the book (PM 21.11 03.15):
     the quota caps the share, and free invoices move to an off day one to three days earlier, or to a business
     day, until it holds. Free means unpaid, no anchor, no twin, not billed monthly; moving earlier keeps the
-    entry after the document, and the period of the document does not change."""
+    entry after the document, and the period of the document does not change. When no earlier business day
+    fits (an invoice on 25 March at the start of an April window, or on the first days of May after the
+    period), the ceiling pass moves the invoice one to three days later, still before its entry. Errors and
+    their copies come later, so a book can still end a document above the ceiling."""
     twin_records = {k for t in world.twins for k in t["records"]}
     paid = {k for p in world.payments.values() for k, _ in p.alloc}
 
@@ -1285,6 +1294,14 @@ def _off_day_share(world, documents):
                     inv.issued_at -= dt.timedelta(days=back)
                     inv.service_from = inv.service_to = new.isoformat()
                     break
+            else:
+                for forward in () if want_off else (1, 2, 3):
+                    new = day + dt.timedelta(days=forward)
+                    if (not off(new) and side(new) == side(day) and new <= world.window_end
+                            and inv.issued_at + dt.timedelta(days=forward) < inv.entered_at):
+                        inv.issued_at += dt.timedelta(days=forward)
+                        inv.service_from = inv.service_to = new.isoformat()
+                        break
 
 
 def _first_in_sequence(world):

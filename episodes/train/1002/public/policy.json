@@ -26,7 +26,7 @@
     },
     {
       "code": "7110",
-      "name": "Cost of services"
+      "name": "Selling expenses"
     },
     {
       "code": "7210",
@@ -45,8 +45,7 @@
     "date_rule": "posting_date_rule date",
     "holidays": [
       "2026-10-26",
-      "2026-12-16",
-      "2026-12-17"
+      "2026-12-16"
     ],
     "non_business_fallback": "previous business day",
     "quote": "base units per 1 unit of currency",

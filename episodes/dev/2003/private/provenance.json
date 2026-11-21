@@ -36,13 +36,10 @@
   "injections": [],
   "other_lookalikes": {
     "combined_payment": 2,
-    "late_entry": 3,
+    "late_entry": 6,
     "midnight_utc": 1,
-    "monthly_subscription": 6,
-    "overpayment_and_refund": 1,
-    "repeated_full_payment": 1,
+    "monthly_subscription": 4,
     "split_payment": 2,
-    "unidentified_receipt": 2,
     "weekend_document": 2
   },
   "schema_version": "1.0",
@@ -53,9 +50,9 @@
       "kind": "combined_payment",
       "mimics": "duplicate_invoice",
       "records": [
-        "invoice/27DNMQ",
-        "invoice/YVA5YZ",
-        "payment/9NKN48"
+        "invoice/J3PYEA",
+        "invoice/MC2CKX",
+        "payment/K4K6RN"
       ],
       "twin_id": "TW-01"
     },
@@ -64,16 +61,16 @@
       "kind": "late_entry",
       "mimics": "period_cutoff",
       "records": [
-        "payment/3V8RA9"
+        "payment/X1VZP0"
       ],
       "twin_id": "TW-02"
     },
     {
-      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
+      "distinguishing_feature": "a receipt whose UTC date is in another period than the company-local date it is posted on",
       "kind": "midnight_utc",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/07DFGS"
+        "payment/YTQ3ZY"
       ],
       "twin_id": "TW-03"
     },
@@ -82,19 +79,41 @@
       "kind": "monthly_subscription",
       "mimics": "duplicate_invoice",
       "records": [
-        "invoice/0DK1C8",
-        "invoice/86X3W1"
+        "invoice/JVJK9Y",
+        "invoice/N07QWQ"
       ],
       "twin_id": "TW-04"
+    },
+    {
+      "distinguishing_feature": "payment above the invoice, the excess on 3510, later refunded out of 3510 with no invoice named",
+      "kind": "overpayment_and_refund",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/6DZN6G",
+        "payment/BQPDV6",
+        "payment/GTGZ46"
+      ],
+      "twin_id": "TW-05"
+    },
+    {
+      "distinguishing_feature": "the second payment is the full total although part was paid: allocated up to the open amount, the excess lies on 3510",
+      "kind": "repeated_full_payment",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/PSR3M4",
+        "payment/S9EGAB",
+        "payment/TCAE13"
+      ],
+      "twin_id": "TW-06"
     },
     {
       "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
       "kind": "weekend_document",
       "mimics": "fx_rate",
       "records": [
-        "invoice/5AJYN5"
+        "payment/YTQ3ZY"
       ],
-      "twin_id": "TW-05"
+      "twin_id": "TW-07"
     }
   ],
   "world": {

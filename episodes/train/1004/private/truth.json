@@ -1,61 +1,61 @@
 {
   "clean": false,
-  "episode_id": "5AB2TX",
+  "episode_id": "B0W827",
   "issues": [
     {
       "affected_ids": [
-        "ledger/HHW4XX"
+        "ledger/Y92Y05"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "fx/EXS9BT",
-          "invoice/QXSHQE",
-          "ledger/HHW4XX"
+          "fx/ZTBMQ1",
+          "invoice/SPBEP5",
+          "ledger/Y92Y05"
         ]
       ],
-      "expected_amount_minor": 591820,
-      "issue_id": "8TGMP5",
+      "expected_amount_minor": 755114,
+      "issue_id": "25FZ1G",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "fx_rate"
     },
     {
       "affected_ids": [
-        "invoice/HQHVR1",
-        "invoice/TX3GQM"
+        "invoice/EN9PCN",
+        "invoice/H7E87D"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/HQHVR1",
-          "invoice/TX3GQM",
-          "ledger/0C5BJJ",
-          "ledger/CSABPS"
+          "invoice/EN9PCN",
+          "invoice/H7E87D",
+          "ledger/55W95C",
+          "ledger/SWQ305"
         ]
       ],
-      "expected_amount_minor": 442000000,
-      "issue_id": "PEEGZ6",
+      "expected_amount_minor": 510000000,
+      "issue_id": "2SKXS0",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "duplicate_invoice"
     },
     {
       "affected_ids": [
-        "invoice/3VTV30",
-        "invoice/J6KC3B"
+        "invoice/14KYJX",
+        "invoice/GFSTFW"
       ],
-      "currency": "CNY",
+      "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/3VTV30",
-          "invoice/J6KC3B",
-          "ledger/PNVFYB",
-          "ledger/Z9TRKF"
+          "invoice/14KYJX",
+          "invoice/GFSTFW",
+          "ledger/ABRZKW",
+          "ledger/JXJFZ6"
         ]
       ],
-      "expected_amount_minor": 5152272,
-      "issue_id": "Z70PJK",
+      "expected_amount_minor": 204897220,
+      "issue_id": "Z3RGTY",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "duplicate_invoice"

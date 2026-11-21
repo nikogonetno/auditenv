@@ -40,24 +40,24 @@
           "after": "created",
           "before": null,
           "field": null,
-          "record": "invoice/99WAE0"
+          "record": "invoice/R758Q7"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/TAC7EC"
+          "record": "ledger/PB1G7R"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/6PHKWR"
+          "record": "ledger/V42J0T"
         }
       ],
       "injection_id": "INJ-01",
       "issue_ids": [
-        "2XVZKN"
+        "ZGDG27"
       ],
       "order": 1,
       "root_cause": "vendor bill keyed twice, the copy 0 days after issue with the reference retyped",
@@ -70,119 +70,88 @@
           "after": "created",
           "before": null,
           "field": null,
-          "record": "invoice/3HE0SD"
+          "record": "invoice/06ZW9G"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/W2NSC1"
+          "record": "ledger/TY9VGA"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/JMHYME"
+          "record": "ledger/0MF0TS"
         },
         {
           "after": [
-            "3HE0SD",
-            "AY26T8"
+            "06ZW9G",
+            "2HKM94"
           ],
           "before": [
-            "AY26T8"
+            "2HKM94"
           ],
           "field": "invoice_refs",
-          "record": "payment/S8K8WF"
+          "record": "payment/Z7EYF1"
         },
         {
-          "after": "3HE0SD",
-          "before": "AY26T8",
+          "after": "06ZW9G",
+          "before": "2HKM94",
           "field": "invoice_id",
-          "record": "ledger/H0T35X"
+          "record": "ledger/SMZ5C6"
         }
       ],
       "injection_id": "INJ-02",
       "issue_ids": [
-        "92ESKN"
+        "BYAVR7"
       ],
       "order": 2,
-      "root_cause": "vendor bill keyed twice; the payment, whose reference names both records, was allocated to the copy",
+      "root_cause": "one vendor bill keyed twice; the payment, whose reference names both records, was allocated to one of them, and the other stayed open",
       "scenario_id": "C2",
       "variant": "duplicate_then_paid"
     }
   ],
   "other_lookalikes": {
-    "combined_payment": 2,
-    "late_entry": 6,
-    "midnight_utc": 1,
-    "monthly_subscription": 7,
+    "combined_payment": 7,
+    "late_entry": 8,
+    "midnight_utc": 2,
+    "monthly_subscription": 9,
     "overpayment_and_refund": 1,
     "real_partial_payment": 2,
-    "repeated_full_payment": 1,
-    "unidentified_receipt": 1,
-    "weekend_document": 1
+    "repeated_full_payment": 2,
+    "unidentified_receipt": 2
   },
   "schema_version": "1.0",
   "seed": 2004,
   "twins": [
     {
-      "distinguishing_feature": "the payment names both records and is allocated in full to the copy; the only error is the duplicate",
+      "distinguishing_feature": "the payment names both records and is allocated in full to one of them; the only error is the duplicate",
       "kind": "c2_trap",
       "mimics": "payment_allocation",
       "records": [
-        "invoice/AY26T8",
-        "payment/S8K8WF"
+        "invoice/2HKM94",
+        "payment/Z7EYF1"
       ],
       "twin_id": "TW-01"
-    },
-    {
-      "distinguishing_feature": "one payment cites two different bills of the vendor and settles both",
-      "kind": "combined_payment",
-      "mimics": "duplicate_invoice",
-      "records": [
-        "invoice/6HCQBT",
-        "invoice/EDZ1SW",
-        "payment/2F9E3R"
-      ],
-      "twin_id": "TW-02"
     },
     {
       "distinguishing_feature": "entered after the period, posted on the document date",
       "kind": "late_entry",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/9X5YWV"
+        "invoice/KXT2R6"
       ],
-      "twin_id": "TW-03"
-    },
-    {
-      "distinguishing_feature": "a receipt whose UTC date is in another period than the company-local date it is posted on",
-      "kind": "midnight_utc",
-      "mimics": "period_cutoff",
-      "records": [
-        "payment/BKZZY1"
-      ],
-      "twin_id": "TW-04"
-    },
-    {
-      "distinguishing_feature": "same vendor and amount, other vendor_ref and service month",
-      "kind": "monthly_subscription",
-      "mimics": "duplicate_invoice",
-      "records": [
-        "invoice/6PGD7G",
-        "invoice/M9AP85"
-      ],
-      "twin_id": "TW-05"
+      "twin_id": "TW-02"
     },
     {
       "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
       "kind": "weekend_document",
       "mimics": "fx_rate",
       "records": [
-        "invoice/2PPB1R"
+        "invoice/NRK8NY"
       ],
-      "twin_id": "TW-06"
+      "twin_id": "TW-03"
     }
   ],
   "world": {

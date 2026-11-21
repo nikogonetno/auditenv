@@ -3,14 +3,16 @@
 C1. A foreign customer pays an invoice in full just after the midnight that ends the period (company time;
     for a negative offset just before it). The clerk takes the bank's UTC date as the posting date, and the
     system takes that date's rate: period_cutoff and fx_rate on the payment's 1030 row. A second, separate
-    cause, a typo in the allocation, leaves part of the receipt on 3510: payment_allocation. Three truth
-    issues; period and rate share their affected id, which the matcher pairs by type. Every amount comes
-    from the final book by the formula of its type (auditenv/generate.py).
+    cause: only part of the receipt is allocated to the invoice, and the rest lies on 3510:
+    payment_allocation. Three truth issues; period and rate share their affected id, which the matcher
+    pairs by type. Every amount comes from the final book by the formula of its type (auditenv/generate.py).
 
 C2. A vendor bill is keyed twice, and the real payment, whose remittance names the bill's reference and so
-    both records, is allocated to the copy. The original looks unpaid, but the allocation rule holds: the
-    payment names one document group and is allocated in full to it. One truth issue, duplicate_invoice;
-    a naive reconciliation flags a false payment_allocation on the original.
+    both records, is allocated to the added record, which is keyed before the payment and sometimes before
+    the first one too. The other record looks unpaid, but the allocation rule holds: the payment names one
+    document group and is allocated in full to it. One truth issue, duplicate_invoice; a naive
+    reconciliation flags a false payment_allocation on the record left open. So provenance texts call
+    neither record a copy.
 
 Both work on anchors that auditenv/world.py builds for them and reserves.
 """
@@ -23,7 +25,7 @@ REST_PCT = (20, 60)
 
 
 def _rest(rng, world, pay, inv_key, amount):
-    """The part a typo leaves unallocated: not the total or the open amount of another item of the customer."""
+    """The part left unallocated: not the total or the open amount of another item of the customer."""
     allocated = {}
     for other in world.payments.values():
         for key, part in other.alloc:
@@ -56,7 +58,8 @@ def c1(rng, world, used):
     # the indexes of the issues it gives.
     causes = [(f"bank UTC date {utc_day} used as the posting date instead of the company date "
                f"{world.event_date(pay)}, the system took that date's rate", [0, 1]),
-              (f"allocation keyed as {amount - rest} instead of {amount}, the rest left on 3510", [2])]
+              (f"only part of the payment allocated to the invoice, {amount - rest} of {amount}; "
+               f"the rest {rest} lay on 3510", [2])]
     issues = [("period_cutoff", (carrier,)), ("fx_rate", (carrier,)), ("payment_allocation", (pay.key, inv_key))]
     return "utc_date_as_posting_date+partial_allocation", causes, issues, {pay.key, inv_key}
 
@@ -72,7 +75,8 @@ def c2(rng, world, used):
     pay.alloc = [(copy.key, pay.alloc[0][1])]
     # The trap of C2: the original looks unpaid after a payment that names it. Always listed.
     world.twins.append({"kind": "c2_trap", "mimics": "payment_allocation", "records": [bill.key, pay.key],
-                        "feature": "the payment names both records and is allocated in full to the copy; "
+                        "feature": "the payment names both records and is allocated in full to one of them; "
                                    "the only error is the duplicate", "always": True})
-    cause = "vendor bill keyed twice; the payment, whose reference names both records, was allocated to the copy"
+    cause = ("one vendor bill keyed twice; the payment, whose reference names both records, was allocated to "
+             "one of them, and the other stayed open")
     return "duplicate_then_paid", cause, [("duplicate_invoice", (bill.key, copy.key))], {bill.key, copy.key, pay.key}

@@ -1,58 +1,58 @@
 {
   "clean": false,
-  "episode_id": "M7V4A3",
+  "episode_id": "VGAB9M",
   "issues": [
     {
       "affected_ids": [
-        "ledger/NNJHGC"
+        "ledger/MM1B57"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "ledger/NNJHGC",
-          "payment/71393B"
+          "fx/JHM64P",
+          "ledger/MM1B57",
+          "payment/HKS0PC"
         ]
       ],
-      "expected_amount_minor": 566345760,
-      "issue_id": "4FYCFH",
-      "scenario_id": "C1",
-      "tolerance_minor": 1,
-      "type": "period_cutoff"
-    },
-    {
-      "affected_ids": [
-        "ledger/NNJHGC"
-      ],
-      "currency": "KZT",
-      "evidence_sets": [
-        [
-          "fx/XVBA5T",
-          "ledger/NNJHGC",
-          "payment/71393B"
-        ]
-      ],
-      "expected_amount_minor": 1066564,
-      "issue_id": "6A1MRS",
+      "expected_amount_minor": 1146000,
+      "issue_id": "48PP26",
       "scenario_id": "C1",
       "tolerance_minor": 1,
       "type": "fx_rate"
     },
     {
       "affected_ids": [
-        "invoice/BVD5WG",
-        "payment/71393B"
+        "ledger/MM1B57"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "ledger/MM1B57",
+          "payment/HKS0PC"
+        ]
+      ],
+      "expected_amount_minor": 608526000,
+      "issue_id": "6YV5K4",
+      "scenario_id": "C1",
+      "tolerance_minor": 1,
+      "type": "period_cutoff"
+    },
+    {
+      "affected_ids": [
+        "invoice/PWDZFF",
+        "payment/HKS0PC"
       ],
       "currency": "RUB",
       "evidence_sets": [
         [
-          "invoice/BVD5WG",
-          "ledger/3FCYZ6",
-          "ledger/65T5HZ",
-          "payment/71393B"
+          "invoice/PWDZFF",
+          "ledger/80ZEJB",
+          "ledger/MNGKDP",
+          "payment/HKS0PC"
         ]
       ],
-      "expected_amount_minor": 33063500,
-      "issue_id": "PNZX3M",
+      "expected_amount_minor": 65322000,
+      "issue_id": "VDWVTK",
       "scenario_id": "C1",
       "tolerance_minor": 1,
       "type": "payment_allocation"
