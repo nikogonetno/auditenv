@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "action.schema.json",
+  "title": "One action line of a policy (case §04, SPEC §4.2)",
+  "description": "A line that fails this schema still costs a step: the env answers with a short error code. calculator rejects an expression over 200 characters with expression_too_long.",
+  "oneOf": [
+    {"type": "object", "required": ["action", "table"],
+     "properties": {"action": {"const": "list_records"}, "table": {"$ref": "#/$defs/table"},
+                    "cursor": {"type": ["string", "null"], "maxLength": 200},
+                    "limit": {"type": ["integer", "null"], "minimum": 1, "maximum": 50}}},
+    {"type": "object", "required": ["action", "table", "id"],
+     "properties": {"action": {"const": "get_record"}, "table": {"$ref": "#/$defs/table"},
+                    "id": {"type": "string", "minLength": 1, "maxLength": 200}}},
+    {"type": "object", "required": ["action", "doc_id"],
+     "properties": {"action": {"const": "get_document"}, "doc_id": {"type": "string", "minLength": 1, "maxLength": 200}}},
+    {"type": "object", "required": ["action", "expression"],
+     "properties": {"action": {"const": "calculator"}, "expression": {"type": "string", "maxLength": 200}}},
+    {"type": "object", "required": ["action", "findings"],
+     "properties": {"action": {"const": "submit"}, "findings": {"$ref": "findings.schema.json"}}}
+  ],
+  "$defs": {
+    "table": {"enum": ["ledger", "invoices", "payments", "fx"]}
+  }
+}

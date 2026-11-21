@@ -291,6 +291,8 @@
 
 `submit` принимает `findings.json`: `{episode_id, findings: [{type, affected_ids, claimed_amount_minor, currency, evidence_ids, explanation}]}`. Имена полей заданы константами `F_*` в `auditenv/grader/matcher.py` и `auditenv/submission.py`.
 
+Машиночитаемые схемы JSON Schema 2020-12 лежат в `schemas/findings.schema.json` и `schemas/action.schema.json` (кейс §09, QA L9). Тест `tests/test_schemas.py` сверяет схему с `check_submission`. На 15 неверных структурах и 4 крайних случаях репетиции V они согласны во всём, кроме одного правила: совпадение `episode_id` с эпизодом схема выразить не может.
+
 **Неверная структура даёт −1 и завершает эпизод** (кейс §05). Среда проверяет весь `findings.json` до оценщика, функция `auditenv.submission.check_submission`. Код ошибки уходит в журнал оценщика.
 
 | Поле | Допустимо |
