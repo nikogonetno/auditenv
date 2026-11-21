@@ -94,10 +94,12 @@ make demo
 
 ```python
 import sys
+from pathlib import Path
 from auditenv.env import AuditEnv
 from auditenv.runner import run_subprocess_episode
 
 env = AuditEnv("train")                       # "eval" прячет награду от политики
+Path("runs").mkdir(exist_ok=True)
 with open("runs/my_policy.jsonl", "w", encoding="utf-8") as trajectory:
     result = run_subprocess_episode([sys.executable, "my_policy.py"], env, 0,
                                     {"episode_dir": "tests/fixtures/mini_v03"}, trajectory=trajectory)
