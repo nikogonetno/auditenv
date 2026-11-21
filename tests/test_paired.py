@@ -48,10 +48,10 @@ class Plan(unittest.TestCase):
         self.assertEqual({c[1] for c in checks}, {"repeat"})
         self.assertEqual(len({(c[2], c[3]) for c in checks}), 8)
 
-    def test_with_transform_the_kinds_alternate(self):
+    def test_with_transform_every_check_repeats_and_transforms(self):
         checks = paired.plan(20, ["a"], with_transform=True)
-        self.assertEqual([c[1] for c in checks], ["repeat", "transform"] * 10)
-        self.assertEqual([c[3] for c in checks[0:8:2]], list(paired.REPEAT_POLICIES))
+        self.assertEqual([c[1] for c in checks], ["repeat+transform"] * 20)
+        self.assertEqual([c[3] for c in checks[:4]], list(paired.REPEAT_POLICIES))
 
 
 class Repeat(unittest.TestCase):
@@ -104,7 +104,7 @@ class Repeat(unittest.TestCase):
 
         rows, summary = paired.run_paired([MINI], n=2, runner=runner)
         self.assertEqual([r["ok"] for r in rows], [False, True])
-        self.assertEqual(rows[0]["detail"], "RuntimeError: policy crashed")
+        self.assertEqual(rows[0]["detail"], "repeat: RuntimeError: policy crashed")
         self.assertEqual((summary["passed"], summary["total"]), (1, 2))
 
 
@@ -112,15 +112,17 @@ class TransformCli(unittest.TestCase):
     def test_identity_transform_passes(self):
         code, rows, summary, _ = paired_cli(MINI, "--n", "2", "--transform", "tests.fake_transforms:copy_unchanged")
         self.assertEqual(code, 0)
-        self.assertEqual([(r["kind"], r["ok"]) for r in rows], [("repeat", True), ("transform", True)])
-        self.assertIn("8 issues, oracle 1.0 on both", rows[1]["detail"])
-        self.assertEqual((summary["paired"], summary["transform"], summary["repeat"]), ("OK", 1, 1))
+        self.assertEqual([(r["kind"], r["ok"]) for r in rows], [("repeat+transform", True)] * 2)
+        self.assertIn("transform: salt 1, 8 issues, oracle 1.0 on both", rows[0]["detail"])
+        self.assertIn("repeat: ", rows[0]["detail"])
+        self.assertEqual((summary["paired"], summary["transform"], summary["repeat"]), ("OK", 2, 2))
 
     def test_a_dropped_truth_issue_fails_the_transform_check(self):
         code, rows, summary, _ = paired_cli(MINI, "--n", "2", "--transform", "tests.fake_transforms:drop_one_issue")
-        self.assertEqual((code, summary["paired"], summary["passed"]), (1, "FAIL", 1))
-        self.assertEqual([(r["kind"], r["ok"]) for r in rows], [("repeat", True), ("transform", False)])
+        self.assertEqual((code, summary["paired"], summary["passed"]), (1, "FAIL", 0))
+        self.assertEqual([(r["kind"], r["ok"]) for r in rows], [("repeat+transform", False)] * 2)
         self.assertIn("truth (type, amount, currency) differs", rows[1]["detail"])
+        self.assertIn("identical trajectory lines", rows[1]["detail"])     # the repeat half passed
 
     def test_truth_left_on_the_old_ids_fails_the_transform_check(self):
         code, rows, _, _ = paired_cli(MINI, "--n", "2", "--transform", "tests.fake_transforms:rename_without_truth")
@@ -132,7 +134,7 @@ class TransformCli(unittest.TestCase):
     def test_the_real_transform_is_the_default_and_passes_on_mini(self):
         code, rows, summary, _ = paired_cli(MINI, "--n", "4")
         self.assertEqual(code, 0, rows)
-        self.assertEqual((summary["paired"], summary["transform"], summary["repeat"]), ("OK", 2, 2))
+        self.assertEqual((summary["paired"], summary["transform"], summary["repeat"]), ("OK", 4, 4))
 
     def test_missing_transform_module_is_a_skip_not_a_failure(self):
         code, rows, summary, _ = paired_cli(MINI, "--n", "2", "--transform", "tests.no_such_module:permute_and_rename")

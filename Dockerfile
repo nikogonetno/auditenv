@@ -1,6 +1,7 @@
 # Offline verification image. Nothing is pip-installed: the project has no
 # runtime dependencies, so the build needs only the base image.
-FROM python:3.11.11-slim-bookworm
+# Pinned by digest as well as by tag (QA L10): the digest CI resolved the tag to on 21.11.
+FROM python:3.11.11-slim-bookworm@sha256:081075da77b2b55c23c088251026fb69a7b2bf92471e491ff5fd75c192fd38e5
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1

@@ -33,7 +33,7 @@ from auditenv.config import ISSUE_TYPES  # noqa: E402
 from auditenv.env import MODES, AuditEnv  # noqa: E402
 from auditenv.grader import f1_score  # noqa: E402
 from auditenv.private_args import hide_private_args  # noqa: E402
-from auditenv.run import POLICIES, run_policy  # noqa: E402
+from auditenv.run import POLICIES, run_policy, submitted_findings  # noqa: E402
 from auditenv.episode import load_episode  # noqa: E402
 from auditenv.grader import score  # noqa: E402
 from auditenv.runner import encode_line, run_inprocess_episode  # noqa: E402
@@ -90,17 +90,6 @@ def expand(paths):
             raise ValueError(f"{raw}: neither an episode nor a directory of episodes")
         episodes.extend(found)
     return episodes
-
-
-def submitted_findings(trajectory_text):
-    """Findings of the submit that ended the episode; [] after a truncation or an unreadable submit."""
-    lines = trajectory_text.splitlines()
-    action = json.loads(lines[-1]).get("action") if lines else None
-    if not isinstance(action, dict) or action.get("action") != "submit":
-        return []
-    body = action.get("findings")
-    findings = body.get("findings") if isinstance(body, dict) else None
-    return findings if isinstance(findings, list) else []
 
 
 def grade_row(policy, source, env, result, findings):
@@ -173,8 +162,10 @@ def run_all(episodes, policies, mode, seed, trajectories=None):
             if policy == "reconcile":
                 by_rule = reconcile_rule_misses(source, env)
                 kind = {i["issue_id"]: i["type"] for i in env._truth.get("issues") or []}
+                scenario = {i["issue_id"]: i.get("scenario_id") for i in env._truth.get("issues") or []}
                 row["missed_by_rule"] = sorted([kind[i], i] for i in row["missed"] if i in by_rule)
                 row["missed_by_cap"] = sorted([kind[i], i] for i in row["missed"] if i not in by_rule)
+                row["missed_scenario"] = {i: scenario[i] for i in sorted(row["missed"])}
             rows.append(row)
     return rows
 
@@ -253,6 +244,24 @@ def misses_table(rows):
     return table(("тип", "пропуски правила", "пропуски лимита 30", "всего FN"), body)
 
 
+def misses_by_scenario_table(rows):
+    """Reconcile misses by scenario and type (QA L12): C1 and C2 apart from errors outside a scenario."""
+    mine = [r for r in rows if r["policy"] == "reconcile" and "missed_by_rule" in r]
+    counts = {}
+    for r in mine:
+        for cause, missed in (("rule", r["missed_by_rule"]), ("cap", r["missed_by_cap"])):
+            for kind, issue_id in missed:
+                key = (r["missed_scenario"].get(issue_id) or "без сценария", kind)
+                counts.setdefault(key, {"rule": 0, "cap": 0})[cause] += 1
+    if not counts:
+        return []
+    order = {"C1": 0, "C2": 1}
+    body = [[scenario, kind, c["rule"], c["cap"], c["rule"] + c["cap"]]
+            for (scenario, kind), c in sorted(counts.items(), key=lambda kv: (order.get(kv[0][0], 2), kv[0]))]
+    body.append(["всего", "", *(sum(b[k] for b in body) for k in (2, 3, 4))])
+    return table(("сценарий", "тип", "пропуски правила", "пропуски лимита 30", "всего FN"), body, text_columns=2)
+
+
 def episode_rows(rows, policies):
     """(episode_id, clean, issues, {policy: reward}) per episode run, in run order."""
     blocks = [rows[k:k + len(policies)] for k in range(0, len(rows), len(policies))]
@@ -307,6 +316,11 @@ def report(rows, args, policies):
         lines += ["", "## Пропуски сверки", "",
                   "Пропуск правила: ни одно из четырёх правил сверки не находит ошибку во всей книге. Пропуск лимита:",
                   "правило её находит, но вывод не попал в 30 отправленных (кейс §05).", "", *misses]
+        by_scenario = misses_by_scenario_table(rows)
+        if by_scenario:
+            lines += ["", "## Пропуски сверки по сценариям", "",
+                      "Те же пропуски, по сценарию ошибки эталона: C1 и C2 отдельно от ошибок вне сценария.", "",
+                      *by_scenario]
     if any(p in DIAGNOSTIC_POLICIES for p in policies):
         lines += ["", "## Умный спрей", "",
                   "`spray` это диагностика (PM, E-32), не базовая политика жюри: несущие строки в пределах двух дней",
