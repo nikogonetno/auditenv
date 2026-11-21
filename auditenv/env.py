@@ -228,8 +228,13 @@ class AuditEnv:
         try:
             findings = check_submission(action.get("findings"), episode.episode_id)
         except InvalidSubmission as exc:
+            # How many findings the broken submit listed: grader side only (not in info), for the summaries of
+            # auditenv.run and scripts/metrics.py, which count them as false positives.
+            body = action.get("findings")
+            listed = body.get("findings") if type(body) is dict else None
             entry = {"episode_id": episode.episode_id, "mode": self.mode, "end": "submit",
-                     "inspection_steps": inspection_steps, "error": str(exc), "reward": -1.0}
+                     "inspection_steps": inspection_steps, "error": str(exc), "reward": -1.0,
+                     "submitted_findings": len(listed) if type(listed) is list else 0}
             return self._end({"result": {"status": "submitted"}}, entry, terminated=True)
         result = score(findings, self._truth, inspection_steps, episode.aliases)
         entry = {"episode_id": episode.episode_id, "mode": self.mode, "end": "submit", **result}

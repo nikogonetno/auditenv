@@ -23,7 +23,6 @@ carries the grade in eval mode too, with the code version and config_sha256 of t
 import argparse
 import io
 import json
-import math
 import os
 import shlex
 import shutil
@@ -41,7 +40,8 @@ from .runner import (SANDBOX_MODES, TIME_LIMIT_S, encode_line, run_inprocess_epi
 SUBPROCESS_POLICIES = {"random": "policies.random_policy", "reconcile": "policies.reconcile", "flag_all": "policies.flag_all"}
 POLICIES = (*SUBPROCESS_POLICIES, "oracle")
 REPORT_KEYS = ("tp", "fp", "fn", "precision", "recall", "f1", "reward")
-SET_KEYS = {"version", "split", "comment", "episodes"}   # an episode set, as in configs/*_v2.json
+SET_KEYS = {"version", "split", "comment", "episodes"}   # an episode set, as in configs/*_v2.json; none is a
+                                                         # generator config key (auditenv.config.DEFAULTS)
 EXTERNAL = "external"     # the policy name in the report of a --policy-cmd run
 NO_SANDBOX_WARNING = ("auditenv.run: WARNING: eval run without the sandbox: the policy runs as this user and "
                       "can read private/ (the truth); run the closed evaluation only in Docker, see README "
@@ -126,35 +126,74 @@ def episode_config_sha256(config):
 
 
 def episode_set(data):
-    """[(seed, config)] of an episode set, or None when data is one generator config. ValueError if broken."""
-    if "episodes" not in data:
+    """[(seed, config)] of an episode set, or None when data is one generator config. ValueError if broken.
+
+    Every item's config goes through normalize_config here, before any episode runs, so a bad item stops the
+    run with its number and nothing written (QA M5); main() also builds the items it will run once, for what
+    only the generator rejects. version is required, split and comment are optional. Any set key makes the
+    object a set, so a set without episodes is not mistaken for one generator config (QA L13).
+    """
+    if "configs" in data and type(data["configs"]) is list:
+        raise ValueError("this is a list of configs for scripts/stress.py, not an episode set or a generator config")
+    if not SET_KEYS & set(data):
         return None
+    if "episodes" not in data:
+        raise ValueError("an episode set needs a non-empty list episodes")
     unknown = sorted(set(data) - SET_KEYS)
     if unknown:
         raise ValueError(f"unknown episode set key: {unknown[0]}")
+    if type(data.get("version")) is not str or not data["version"]:
+        raise ValueError("an episode set needs a non-empty string version")
+    for key in ("split", "comment"):
+        if key in data and type(data[key]) is not str:
+            raise ValueError(f"episode set key {key} must be a string")
     items = data["episodes"]
     if type(items) is not list or not items:
         raise ValueError("an episode set needs a non-empty list episodes")
     runs = []
-    for item in items:
-        if (type(item) is not dict or set(item) != {"seed", "config"} or type(item["seed"]) is not int
+    for n, item in enumerate(items, 1):
+        seed = item.get("seed") if type(item) is dict else None
+        where = f"episode set item {n} (seed {seed})" if type(seed) is int else f"episode set item {n}"
+        if (type(item) is not dict or set(item) != {"seed", "config"} or type(seed) is not int or seed < 0
                 or type(item["config"]) is not dict):
-            raise ValueError("every item of episodes must be {\"seed\": int, \"config\": object}")
+            raise ValueError(f"{where}: must be {{\"seed\": int >= 0, \"config\": object}}")
+        try:
+            normalize_config(item["config"])
+        except ValueError as exc:
+            raise ValueError(f"episode set item {n} (seed {item['seed']}): {exc}") from None
         runs.append((item["seed"], item["config"]))
-    if len({seed for seed, _ in runs}) != len(runs):
-        raise ValueError("an episode set repeats a seed")
+    first = {}
+    for n, (seed, _) in enumerate(runs, 1):
+        if seed in first:
+            raise ValueError(f"episode set items {first[seed]} and {n} repeat seed {seed}")
+        first[seed] = n
     return runs
 
 
+def build_check(runs, info):
+    """Build every episode of a set run once, before any policy runs and any log is written, so a config only
+    the generator rejects (a book too small for its errors, a C1 that does not fit) stops the run at once with
+    its item number (QA M5). ValueError naming the item."""
+    import tempfile                                    # only the set path needs it
+    from .generate import generate_episode
+    with tempfile.TemporaryDirectory(prefix="auditenv-set-check-") as root:
+        for seed, config in runs:
+            try:
+                generate_episode(seed, config, os.path.join(root, str(seed)))
+            except (ValueError, RuntimeError) as exc:  # a config error, or WorldError of the generator
+                raise ValueError(f"episode set item {info['item'][seed]} (seed {seed}): {exc}") from None
+
+
 def plan_runs(args):
-    """([(seed, config)] to run in order, the set's {version, split} or None)."""
+    """([(seed, config)] to run in order, the set's {version, split, item number by seed} or None)."""
     if args.episode_dir:
         return [(0 if args.seed is None else args.seed, {"episode_dir": args.episode_dir})], None
     data = load_config(args.config)
     runs = episode_set(data)
     if runs is None:
         return [(0 if args.seed is None else args.seed, data)], None
-    info = {"version": data.get("version"), "split": data.get("split")}
+    info = {"version": data.get("version"), "split": data.get("split"),
+            "item": {seed: n for n, (seed, _) in enumerate(runs, 1)}}       # for error messages
     if args.seed is None:
         return runs, info
     chosen = [run for run in runs if run[0] == args.seed]
@@ -175,13 +214,21 @@ def submitted_findings(trajectory_text):
     return findings if isinstance(findings, list) else []
 
 
+def broken_submit_counts(listed, issues):
+    """(tp, fp, fn) of a findings.json with a broken structure (case §05: reward -1, nothing matched). Its
+    `listed` findings are false positives, at least one, so a broken empty answer on a clean company never
+    counts as the perfect empty answer (QA H1); every truth issue is missed. scripts/metrics.py uses the same
+    rule. The count comes from the grader entry, so an oversize submit recorded as a digest counts in full."""
+    return 0, max(listed, 1), len(issues)
+
+
 def episode_counts(env, trajectory_text):
-    """(tp, fp, fn) of one episode. A findings.json with a broken structure matches nothing: its findings are
-    false positives and every truth issue is missed, as in scripts/metrics.py (case §05)."""
+    """(tp, fp, fn) of one episode, a broken submit counted by broken_submit_counts."""
     entry = env.grader_log[-1]
     if "tp" in entry:
         return entry["tp"], entry["fp"], entry["fn"]
-    return 0, len(submitted_findings(trajectory_text)), len(env._truth.get("issues") or [])  # grader side only
+    listed = entry.get("submitted_findings", len(submitted_findings(trajectory_text)))
+    return broken_submit_counts(listed, env._truth.get("issues") or [])  # grader side only
 
 
 def set_summary(info, reports, counts):
@@ -193,8 +240,23 @@ def set_summary(info, reports, counts):
             "precision": float(Fraction(tp, tp + fp)) if tp + fp else 0.0,
             "recall": float(Fraction(tp, tp + fn)) if tp + fn else 0.0,
             "f1": float(f1_score(tp, fp, fn)),
-            "mean_reward": math.fsum(r["reward"] for r in reports) / len(reports),
-            "mean_steps": sum(r["steps"] for r in reports) / len(reports)}
+            # Rewards are exact fractions turned into floats by the grader; the mean is taken exactly (QA L14).
+            "mean_reward": float(sum(Fraction(r["reward"]).limit_denominator(10 ** 7) for r in reports) / len(reports)),
+            "mean_steps": float(Fraction(sum(r["steps"] for r in reports), len(reports)))}
+
+
+def hand_back(paths):
+    """Give log files to the owner of their folder when the runner is root (the Docker image), so the jury
+    reads trajectories and the grader log without sudo (QA L15). They stay 0600; never to the sandbox user."""
+    if os.name != "posix" or os.geteuid() != 0:
+        return
+    sandbox = sandbox_user()
+    for path in paths:
+        if not path or not os.path.isfile(path):
+            continue
+        folder = os.stat(os.path.dirname(os.path.abspath(path)))
+        if folder.st_uid != 0 and (sandbox is None or folder.st_uid != sandbox[0]):
+            os.chown(path, folder.st_uid, folder.st_gid)
 
 
 def load_config(text):
@@ -230,21 +292,29 @@ def main(argv=None):
         print("auditenv.run: sandbox unavailable: run as root where the user auditpolicy exists (the Docker image)",
               file=sys.stderr)
         return 2
+    if info is not None:
+        try:
+            build_check(runs, info)
+        except ValueError as exc:
+            print(f"auditenv.run: {exc}", file=sys.stderr)
+            return 2
     if args.mode == "eval" and subprocess_policy and (args.sandbox == "off" or sandbox_user() is None):
         print(NO_SANDBOX_WARNING, file=sys.stderr, flush=True)  # warn only: our own scripts run like this (QA N-3)
     trajectory = open(args.trajectories, "a", encoding="utf-8", newline="\n") if args.trajectories else None
     reports, counts = [], []
     try:
         for seed, config in runs:
+            where = f"episode set item {info['item'][seed]} (seed {seed}): " if info else ""
             env, text = AuditEnv(args.mode), io.StringIO()
             try:
                 result = run_policy(args.policy, env, seed, config, args.policy_seed, args.time_limit, text,
                                     args.sandbox, policy_cmd)
             except (ValueError, RuntimeError) as exc:  # broken config or episode directory, or no sandbox
-                print(f"auditenv.run: {exc}", file=sys.stderr)
+                print(f"auditenv.run: {where}{exc}", file=sys.stderr)
                 return 2
             except OSError as exc:  # the policy command failed to start, e.g. the sandbox user cannot run it
-                print(f"auditenv.run: cannot start the policy: {exc.strerror}: {exc.filename}", file=sys.stderr)
+                print(f"auditenv.run: {where}cannot start the policy: {exc.strerror}: {exc.filename}",
+                      file=sys.stderr)
                 return 2
             if trajectory is not None:
                 trajectory.write(text.getvalue())
@@ -263,6 +333,7 @@ def main(argv=None):
     finally:
         if trajectory is not None:
             trajectory.close()
+        hand_back([args.trajectories, args.grader_log])
     if info is not None and args.seed is None:
         sys.stdout.write(encode_line(set_summary(info, reports, counts)))
     return 0
