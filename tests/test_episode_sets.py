@@ -6,6 +6,7 @@ the test also checks that the sandbox user can read neither the logs of a set ru
 """
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -19,10 +20,10 @@ POLICY = ROOT / "examples" / "my_policy.py"
 SANDBOXED = sandbox_user() is not None        # root where the user auditpolicy exists: the Docker image
 
 
-def run_cli(*args):
+def run_cli(*args, umask=-1):
     env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
     return subprocess.run([sys.executable, "-P", "-s", "-m", "auditenv.run", *args], capture_output=True,
-                          text=True, cwd=ROOT, env={**env, "PYTHONPATH": str(ROOT)}, timeout=300)
+                          text=True, cwd=ROOT, env={**env, "PYTHONPATH": str(ROOT)}, timeout=300, umask=umask)
 
 
 def lines(text):
@@ -80,6 +81,20 @@ class EpisodeSets(unittest.TestCase):
                 self.assertIn("auditenv.run:", proc.stderr)
                 self.assertNotIn("Traceback", proc.stderr)
 
+    def test_a_broken_submit_counts_its_issues_as_missed_in_the_summary(self):
+        policy = self.root / "broken.py"
+        policy.write_text("import json, sys\nsys.stdin.readline()\n"
+                          "print(json.dumps({'action': 'submit', 'findings': {'episode_id': 'WRONG', 'findings': "
+                          "[{'type': 'x'}]}}), flush=True)\nsys.stdin.readline()\n", encoding="utf-8")
+        proc = run_cli("--policy-cmd", f"{sys.executable} {policy}", "--config", str(self.set_file), "--mode", "train")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        first, second, total = lines(proc.stdout)
+        self.assertEqual((first["error"], first["tp"]), ("episode_id_mismatch", None))
+        issues = sum(e["issues"] for e in json.loads((ROOT / "episodes" / "dev" / "index.json").read_text())["episodes"]
+                     if e["seed"] in (2000, 2001))
+        self.assertEqual((total["invalid"], total["tp"], total["fp"], total["fn"]), (2, 0, 2, issues))
+        self.assertEqual((total["f1"], total["mean_reward"]), (0.0, -1.0))
+
     def test_one_config_still_works_and_reports_its_hash(self):
         proc = run_cli("--policy", "oracle", "--config", "{}", "--seed", "7")
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -100,18 +115,23 @@ class EpisodeSets(unittest.TestCase):
     def test_in_docker_the_sandbox_user_reads_neither_the_logs_nor_the_set(self):
         os.chmod(self.root, 0o755)                         # the files alone must keep the policy out
         hidden, out = self.root / "in", self.root / "out"
-        hidden.mkdir(mode=0o700)
-        out.mkdir(mode=0o755)
+        hidden.mkdir()
+        out.mkdir()
+        os.chmod(hidden, 0o700)
+        os.chmod(out, 0o755)                               # open: only the modes of the files keep the policy out
         set_file = hidden / "hidden_set.json"
         set_file.write_text(json.dumps(self.pair), encoding="utf-8")
+        # umask 022 as in a jury's `docker run ... python3 -m auditenv.run`: the CLI's own umask 077 must hold.
         proc = run_cli("--policy-cmd", f"python3 {POLICY}", "--config", str(set_file), "--mode", "eval",
                        "--sandbox", "required", "--trajectories", str(out / "trajectories.jsonl"),
-                       "--grader-log", str(out / "grader_log.jsonl"))
+                       "--grader-log", str(out / "grader_log.jsonl"), umask=0o022)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         reports = lines(proc.stdout)
         self.assertEqual([r.get("sandbox") for r in reports[:2]], ["uid", "uid"])
         self.assertEqual(reports[2]["episodes"], 2)
         uid, gid = sandbox_user()
+        for path in (out / "trajectories.jsonl", out / "grader_log.jsonl"):
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode) & 0o077, 0, path.name)
         for path in (out / "trajectories.jsonl", out / "grader_log.jsonl", set_file):
             with self.subTest(path=path.name):
                 self.assertTrue(path.is_file())

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "findings.schema.json",
   "title": "findings.json, the object of submit (case §05, SPEC §5.1)",
-  "description": "Extra keys are ignored at both levels. Not expressible here: episode_id must equal the episode's own id (else episode_id_mismatch).",
+  "description": "Extra keys are ignored at both levels. Two rules the env checks beyond this schema: episode_id must equal the episode's own id (else episode_id_mismatch), and claimed_amount_minor must be written as a JSON integer without a fraction or exponent (JSON Schema counts 1.0 as an integer, the env gives bad_claimed_amount).",
   "type": "object",
   "required": ["episode_id", "findings"],
   "properties": {

@@ -19,7 +19,7 @@ make verify
 ```
 
 Скрипт `scripts/verify.sh` выполняет три шага:
-1. юнит-тесты, 443 теста на stdlib `unittest`;
+1. юнит-тесты, 444 теста на stdlib `unittest`;
 2. стресс по одному seed на каждый из 11 config `configs/stress_v3.json`: генератор, строгий верификатор V, oracle 1.0, побайтная воспроизводимость в свежих процессах при `PYTHONHASHSEED` 0 и 1. Итоговая строка стресса это говорит прямо: `"determinism": "11 of 11 episodes byte-identical …"`;
 3. последняя строка вывода `verify: OK`.
 
@@ -225,14 +225,14 @@ print(result, env.grader_log[-1]["reward"])
 
 Один верный вывод из восьми ошибок даёт F1 = 2/9. Награда равна 2·F1 − 1 − 0.002·1, где 1 это шаг до submit, то есть −0.5576. В режиме `eval` политика на тот же submit увидит `"reward": 0.0` и пустой `info`.
 
-**Действия** (кейс §04). Машиночитаемые схемы JSON Schema 2020-12 лежат в `schemas/`: `action.schema.json` для строки действия и `findings.schema.json` для `findings.json`. Схема не может проверить только одно правило: `episode_id` должен совпадать с эпизодом.
+**Действия** (кейс §04). Машиночитаемые схемы JSON Schema 2020-12 лежат в `schemas/`: `action.schema.json` для строки действия и `findings.schema.json` для `findings.json`. Два правила среда проверяет сверх схемы: `episode_id` должен совпадать с эпизодом, а целые числа (`claimed_amount_minor`, `limit`) пишутся без дробной части и показателя. По JSON Schema 2020-12 `325000.0` это целое, а среда даёт на него ошибку.
 
 | действие | аргументы |
 |---|---|
 | `list_records` | `table` из `ledger`, `invoices`, `payments`, `fx`; `cursor` (`null` для начала); `limit` от 1 до 50 |
 | `get_record` | `table`, `id`; ID можно писать с префиксом таблицы или без |
 | `get_document` | `doc_id`: значение поля `doc_id` записи счёта или платежа (например `WRJD8T`). По `invoice_id` или `payment_id` запись читает `get_record` |
-| `calculator` | `expression`: десятичные числа, `+ - * /` и скобки, до 200 символов, вложенность скобок до 20, показатель степени в числе до ±40. Ошибки: `expression_too_long`, `bad_expression`, `division_by_zero`, `result_too_large` |
+| `calculator` | `expression`: десятичные числа, `+ - * /` и скобки, до 200 символов, вложенность скобок до 20, показатель степени в числе до ±40. Результат округляется до 18 знаков после запятой (`1/3` даёт `0.333333333333333333`, `1e-20` даёт `0`) и по модулю должен быть меньше `1e34`: `1e35` или `1e40` в числе допустимы, но как результат дают `result_too_large`. Ошибки: `expression_too_long`, `bad_expression`, `division_by_zero`, `result_too_large` |
 | `submit` | `findings`: объект `findings.json` |
 
 **Лимиты:**

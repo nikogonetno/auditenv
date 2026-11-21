@@ -21,6 +21,7 @@ carries the grade in eval mode too, with the code version and config_sha256 of t
 --trajectories and --grader-log append to their files: the trajectory lines and one grader entry per episode.
 """
 import argparse
+import io
 import json
 import math
 import os
@@ -163,12 +164,32 @@ def plan_runs(args):
     return chosen, info
 
 
-def set_summary(info, reports):
+def submitted_findings(trajectory_text):
+    """Findings of the submit that ended the episode; [] after a truncation or an unreadable submit."""
+    lines = trajectory_text.splitlines()
+    action = json.loads(lines[-1]).get("action") if lines else None
+    if not isinstance(action, dict) or action.get("action") != "submit":
+        return []
+    body = action.get("findings")
+    findings = body.get("findings") if isinstance(body, dict) else None
+    return findings if isinstance(findings, list) else []
+
+
+def episode_counts(env, trajectory_text):
+    """(tp, fp, fn) of one episode. A findings.json with a broken structure matches nothing: its findings are
+    false positives and every truth issue is missed, as in scripts/metrics.py (case §05)."""
+    entry = env.grader_log[-1]
+    if "tp" in entry:
+        return entry["tp"], entry["fp"], entry["fn"]
+    return 0, len(submitted_findings(trajectory_text)), len(env._truth.get("issues") or [])  # grader side only
+
+
+def set_summary(info, reports, counts):
     """The last line of a set run: micro P, R and F1 over the episodes, mean reward and mean steps."""
-    graded = [r for r in reports if r.get("tp") is not None]
-    tp, fp, fn = (sum(r[key] for r in graded) for key in ("tp", "fp", "fn"))
+    tp, fp, fn = (sum(c[k] for c in counts) for k in range(3))
     return {"episode_set": info["version"], "split": info["split"], "episodes": len(reports),
-            "code_version": __version__, "invalid": len(reports) - len(graded), "tp": tp, "fp": fp, "fn": fn,
+            "code_version": __version__, "invalid": sum(r.get("tp") is None for r in reports),
+            "tp": tp, "fp": fp, "fn": fn,
             "precision": float(Fraction(tp, tp + fp)) if tp + fp else 0.0,
             "recall": float(Fraction(tp, tp + fn)) if tp + fn else 0.0,
             "f1": float(f1_score(tp, fp, fn)),
@@ -212,12 +233,12 @@ def main(argv=None):
     if args.mode == "eval" and subprocess_policy and (args.sandbox == "off" or sandbox_user() is None):
         print(NO_SANDBOX_WARNING, file=sys.stderr, flush=True)  # warn only: our own scripts run like this (QA N-3)
     trajectory = open(args.trajectories, "a", encoding="utf-8", newline="\n") if args.trajectories else None
-    reports = []
+    reports, counts = [], []
     try:
         for seed, config in runs:
-            env = AuditEnv(args.mode)
+            env, text = AuditEnv(args.mode), io.StringIO()
             try:
-                result = run_policy(args.policy, env, seed, config, args.policy_seed, args.time_limit, trajectory,
+                result = run_policy(args.policy, env, seed, config, args.policy_seed, args.time_limit, text,
                                     args.sandbox, policy_cmd)
             except (ValueError, RuntimeError) as exc:  # broken config or episode directory, or no sandbox
                 print(f"auditenv.run: {exc}", file=sys.stderr)
@@ -225,6 +246,10 @@ def main(argv=None):
             except OSError as exc:  # the policy command failed to start, e.g. the sandbox user cannot run it
                 print(f"auditenv.run: cannot start the policy: {exc.strerror}: {exc.filename}", file=sys.stderr)
                 return 2
+            if trajectory is not None:
+                trajectory.write(text.getvalue())
+                trajectory.flush()
+            counts.append(episode_counts(env, text.getvalue()))
             entry = env.grader_log[-1]
             if args.grader_log:
                 with open(args.grader_log, "a", encoding="utf-8", newline="\n") as f:
@@ -239,7 +264,7 @@ def main(argv=None):
         if trajectory is not None:
             trajectory.close()
     if info is not None and args.seed is None:
-        sys.stdout.write(encode_line(set_summary(info, reports)))
+        sys.stdout.write(encode_line(set_summary(info, reports, counts)))
     return 0
 
 

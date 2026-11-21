@@ -1,9 +1,10 @@
 """Machine-readable schemas of findings.json and of an action line (docs/tasks/B_qa_fixes.md item 5, QA L9).
 
 The project has no dependencies, so a small validator for the subset of JSON Schema 2020-12 the two files
-use lives here. The schema must agree with auditenv.submission.check_submission on the 15 broken structures
-and the 4 edge cases of V's rehearsal (qa/rehearsal/probe_policy.py), except the one rule no schema can say:
-episode_id must be the episode's own id.
+use lives here, with the semantics of 2020-12 (1.0 is an integer there). The schema must agree with
+auditenv.submission.check_submission on the 15 broken structures and the 4 edge cases of V's rehearsal
+(qa/rehearsal/probe_policy.py), except the two rules no schema can say: episode_id must be the episode's own
+id, and an integer must be written without a fraction (the env takes only a JSON int, E-28).
 """
 import json
 import re
@@ -19,8 +20,8 @@ TYPES = {"object": dict, "array": list, "string": str, "null": type(None)}
 
 
 def _type_ok(value, name):
-    if name == "integer":
-        return type(value) is int                     # JSON Schema: true is a boolean, not an integer
+    if name == "integer":                             # 2020-12: 1.0 is an integer, true is a boolean
+        return type(value) is int or (type(value) is float and value.is_integer())
     return isinstance(value, TYPES[name]) and not (name != "null" and value is None)
 
 
@@ -45,9 +46,10 @@ def valid(value, schema, root):
             return False
         if "pattern" in schema and not re.search(schema["pattern"], value):
             return False
-    if type(value) is int and "minimum" in schema and value < schema["minimum"]:
+    number = type(value) in (int, float)
+    if number and "minimum" in schema and value < schema["minimum"]:
         return False
-    if type(value) is int and "maximum" in schema and value > schema["maximum"]:
+    if number and "maximum" in schema and value > schema["maximum"]:
         return False
     if isinstance(value, list):
         if len(value) < schema.get("minItems", 0) or len(value) > schema.get("maxItems", len(value)):
@@ -104,7 +106,7 @@ EDGE = {
     "explanation_1000": {"episode_id": EID, "findings": [finding(explanation=1000)]},
     "empty": {"episode_id": EID, "findings": []},
 }
-ONLY_AT_RUNTIME = {"wrong_episode_id"}
+ONLY_AT_RUNTIME = {"wrong_episode_id", "amount_float"}
 
 
 def accepted(payload):

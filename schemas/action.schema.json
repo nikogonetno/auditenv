@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "action.schema.json",
   "title": "One action line of a policy (case §04, SPEC §4.2)",
-  "description": "A line that fails this schema still costs a step: the env answers with a short error code. calculator rejects an expression over 200 characters with expression_too_long.",
+  "description": "A line that fails this schema still costs a step: the env answers with a short error code. Beyond this schema, limit must be a JSON integer without a fraction or exponent (JSON Schema counts 1.0 as an integer, the env gives bad_limit).",
   "oneOf": [
     {"type": "object", "required": ["action", "table"],
      "properties": {"action": {"const": "list_records"}, "table": {"$ref": "#/$defs/table"},

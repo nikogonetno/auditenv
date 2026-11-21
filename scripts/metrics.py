@@ -33,7 +33,7 @@ from auditenv.config import ISSUE_TYPES  # noqa: E402
 from auditenv.env import MODES, AuditEnv  # noqa: E402
 from auditenv.grader import f1_score  # noqa: E402
 from auditenv.private_args import hide_private_args  # noqa: E402
-from auditenv.run import POLICIES, run_policy  # noqa: E402
+from auditenv.run import POLICIES, run_policy, submitted_findings  # noqa: E402
 from auditenv.episode import load_episode  # noqa: E402
 from auditenv.grader import score  # noqa: E402
 from auditenv.runner import encode_line, run_inprocess_episode  # noqa: E402
@@ -90,17 +90,6 @@ def expand(paths):
             raise ValueError(f"{raw}: neither an episode nor a directory of episodes")
         episodes.extend(found)
     return episodes
-
-
-def submitted_findings(trajectory_text):
-    """Findings of the submit that ended the episode; [] after a truncation or an unreadable submit."""
-    lines = trajectory_text.splitlines()
-    action = json.loads(lines[-1]).get("action") if lines else None
-    if not isinstance(action, dict) or action.get("action") != "submit":
-        return []
-    body = action.get("findings")
-    findings = body.get("findings") if isinstance(body, dict) else None
-    return findings if isinstance(findings, list) else []
 
 
 def grade_row(policy, source, env, result, findings):
