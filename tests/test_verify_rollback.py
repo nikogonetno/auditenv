@@ -102,6 +102,19 @@ class Rollback(unittest.TestCase):
 
     # --- removed rows -------------------------------------------------------------------------
 
+    def test_generated_removed_rows_come_back(self):
+        # Rehearsal seed 9008 (C1 twice) removes ledger rows; SPEC §3 gives them a row since PR #16.
+        from auditenv.config import normalize_config
+        from auditenv.generate import generate_episode
+        plan = read_json(ROOT / "qa" / "rehearsal" / "configs.json")
+        config = next(e["config"] for e in plan["episodes"] if e["seed"] == 9008)
+        episode = self.tmp / "ep_9008"
+        generate_episode(9008, normalize_config(config), str(episode))
+        removed = [c for i in read_json(episode / "private" / "provenance.json")["injections"]
+                   for c in i["changes"] if c["before"] == "removed"]
+        self.assertTrue(removed)
+        self.assertEqual(verify_rollback(str(episode)), [])
+
     def test_a_removed_row_comes_back_from_its_content(self):
         gone = self.remove_untouched_row(with_row=True)
         self.assertEqual(verify_rollback(str(self.src)), [])
