@@ -5,8 +5,9 @@
 writes a copy of an episode whose public rows (and the line items of every invoice) are in another order
 and whose ids are all new: episode_id, doc_id, invoice_id, payment_id, row_id, je_id, entity_id, line_id,
 fx_id and issue_id. Business attributes (invoice_number, vendor_ref, po_ref), amounts, dates, rates, texts
-and policy.json stay as they are. truth.json and provenance.json follow the new ids, so the copy's truth is
-the same truth: same types, amounts and currencies, affected ids and evidence naming the same records.
+and policy.json stay as they are. truth.json and provenance.json follow the new ids, also inside the content
+of removed ledger rows, so the copy's truth is the same truth: same types, amounts and currencies, affected
+ids and evidence naming the same records.
 private/id_map.json maps every old id to its new one.
 
 New ids come from random.Random seeded by the salt, are unique across all tables and never reuse an old id,
@@ -87,6 +88,12 @@ def _provenance_ids(value):
     return set()
 
 
+def _removed_row_ids(provenance):
+    """Bare ids inside the content of the ledger rows an injection removed (key "row" of a change)."""
+    return {change["row"][c] for inj in provenance.get("injections", ()) for change in inj.get("changes", ())
+            if isinstance(change.get("row"), dict) for c in LEDGER_IDS if change["row"].get(c)}
+
+
 def _map_refs(value, id_map):
     """Every id inside a JSON value, bare or as '<prefix>/<id>', replaced by its new id."""
     if isinstance(value, dict):
@@ -117,7 +124,7 @@ def permute_and_rename(episode_dir, out_dir, salt):
     rng = _rng(salt)
     old = _old_ids(manifest, ledger, invoices, payments, fx, truth)
     if provenance is not None:
-        old |= _provenance_ids(provenance)
+        old |= _provenance_ids(provenance) | _removed_row_ids(provenance)
     source = IdSource(rng)
     source.taken.update(old)                      # a new id never equals an old one
     id_map = {}
@@ -169,7 +176,13 @@ def permute_and_rename(episode_dir, out_dir, salt):
              "private/id_map.json": _json({"salt": salt, "source_episode_id": manifest["episode_id"],
                                            "ids": dict(sorted(id_map.items()))})}
     if provenance is not None:
-        files["private/provenance.json"] = _json({**_map_refs(provenance, id_map),
+        new_provenance = _map_refs(provenance, id_map)
+        for change in (c for inj in new_provenance.get("injections", ()) for c in inj.get("changes", ())):
+            if change.get("field") == "invoice_refs":         # sorted like the public invoice_refs above
+                for side in ("before", "after"):
+                    if isinstance(change[side], list):
+                        change[side] = sorted(change[side])
+        files["private/provenance.json"] = _json({**new_provenance,
                                                   "transform": {"salt": salt,
                                                                 "source_episode_id": manifest["episode_id"]}})
     for rel in sorted(files):

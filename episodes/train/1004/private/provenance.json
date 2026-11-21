@@ -71,7 +71,7 @@
         "Z3RGTY"
       ],
       "order": 1,
-      "root_cause": "vendor bill keyed twice, the copy 0 days after issue with the reference retyped",
+      "root_cause": "one vendor bill keyed twice; one of the two records has the reference typed with other separators and was entered 0 days after issue",
       "scenario_id": null,
       "variant": "same_vendor_ref_reformatted"
     },
@@ -101,7 +101,7 @@
         "2SKXS0"
       ],
       "order": 2,
-      "root_cause": "vendor bill keyed twice, the copy 8 days after issue with the reference retyped",
+      "root_cause": "one vendor bill keyed twice; one of the two records has the reference typed with other separators and was entered 8 days after issue",
       "scenario_id": null,
       "variant": "same_vendor_ref_reformatted"
     },

@@ -143,8 +143,8 @@ def run_inprocess_episode(policy_fn, env, seed, config, trajectory=None):
     Messages and actions make the same JSON round trip as over the pipe, so both runners give
     the same trajectory for the same actions. Exceptions of policy_fn propagate: it is our code.
     """
-    started = time.monotonic()
     transcript = _Transcript(env, seed, config, trajectory)
+    started = time.monotonic()            # after reset, as for a subprocess policy (QA N-7)
     message = transcript.first_message
     while not transcript.done:
         action = policy_fn(json.loads(encode_line(message)))

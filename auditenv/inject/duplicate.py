@@ -70,5 +70,7 @@ def inject(rng, world, used):
     twin = make_copy(rng, world, bill)
     event = bill.issued_at.astimezone(world.tz)
     days = (twin.entered_at.date() - event.date()).days
-    cause = f"vendor bill keyed twice, the copy {days} days after issue with the reference retyped"
+    # Neutral about which record came first: the added one is sometimes keyed before the other (PM 21.11 12.50).
+    cause = (f"one vendor bill keyed twice; one of the two records has the reference typed with other separators "
+             f"and was entered {days} days after issue")
     return VARIANT, cause, [(bill.key, twin.key)], {bill.key, twin.key, *citing}

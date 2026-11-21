@@ -24,3 +24,9 @@ jobs:
 
       - name: docker build and offline run
         run: make docker-verify
+
+      # The closed jury run of README («Закрытый прогон жюри»), word for word, with the README example policy.
+      - name: closed run of an external policy in Docker under auditpolicy
+        run: |
+          docker run --rm --network none -v "$PWD/examples/my_policy.py:/policy/my_policy.py:ro" auditenv:dev python3 -m auditenv.run --policy-cmd "python3 /policy/my_policy.py" --config '{}' --seed 7 --mode eval --sandbox required | tee closed_run.json
+          python3 -c 'import json; r = json.load(open("closed_run.json")); assert (r["sandbox"], r["steps"], r["terminated"], r["truncated"]) == ("uid", 2, True, False), r'

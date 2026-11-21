@@ -469,8 +469,7 @@ class DomainReview(unittest.TestCase):
                 with self.subTest(config=config):
                     self.assertTrue(texts)
                     for text in texts:
-                        if not config["errors"]:              # C1 and C2 alone: no ordinary duplicate
-                            self.assertNotIn("copy", text)
+                        self.assertNotIn("copy", text)
                         self.assertNotIn("typo", text)
                         self.assertNotIn("keyed as", text)
                     allocation = [t for t in texts if "3510" in t]
