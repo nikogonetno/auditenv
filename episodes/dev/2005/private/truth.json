@@ -1,63 +1,63 @@
 {
   "clean": false,
-  "episode_id": "6EWXJS",
+  "episode_id": "X898FR",
   "issues": [
     {
       "affected_ids": [
-        "invoice/3JNW5K",
-        "payment/G4JCD5"
+        "invoice/Y9ESGM",
+        "payment/3Y74PC"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/3JNW5K",
-          "ledger/69VMKD",
-          "ledger/CFE1M5",
-          "payment/G4JCD5"
+          "invoice/Y9ESGM",
+          "ledger/0V7FKE",
+          "ledger/BJRSFZ",
+          "payment/3Y74PC"
         ]
       ],
-      "expected_amount_minor": 47489000,
-      "issue_id": "3S72XQ",
+      "expected_amount_minor": 78689300,
+      "issue_id": "XME64J",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "payment_allocation"
     },
     {
       "affected_ids": [
-        "invoice/EBT801",
-        "payment/HBSDW7"
+        "ledger/M9DFNV"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/EBT801",
-          "ledger/FAW0S7",
-          "ledger/GWT7SZ",
-          "payment/HBSDW7"
+          "invoice/DZX4P6",
+          "ledger/M9DFNV"
         ]
       ],
-      "expected_amount_minor": 77073000,
-      "issue_id": "F66SRR",
-      "scenario_id": null,
-      "tolerance_minor": 1,
-      "type": "payment_allocation"
-    },
-    {
-      "affected_ids": [
-        "ledger/TMYN7B"
-      ],
-      "currency": "KZT",
-      "evidence_sets": [
-        [
-          "invoice/4XF7Y8",
-          "ledger/TMYN7B"
-        ]
-      ],
-      "expected_amount_minor": 567000000,
-      "issue_id": "WSRC71",
+      "expected_amount_minor": 381416008,
+      "issue_id": "YJ8AYC",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "period_cutoff"
+    },
+    {
+      "affected_ids": [
+        "invoice/RCJY3P",
+        "payment/ADSMDS"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/RCJY3P",
+          "ledger/CS0QKE",
+          "ledger/RDH66N",
+          "payment/ADSMDS"
+        ]
+      ],
+      "expected_amount_minor": 59500000,
+      "issue_id": "ZNCQ4Y",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "payment_allocation"
     }
   ]
 }

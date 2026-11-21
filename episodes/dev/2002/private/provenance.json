@@ -35,14 +35,15 @@
   "generator_version": "0.1.0",
   "injections": [],
   "other_lookalikes": {
-    "combined_payment": 6,
-    "late_entry": 7,
-    "midnight_utc": 1,
-    "monthly_subscription": 7,
+    "combined_payment": 2,
+    "late_entry": 10,
+    "midnight_utc": 2,
+    "monthly_subscription": 8,
     "real_partial_payment": 2,
-    "repeated_full_payment": 2,
+    "repeated_full_payment": 1,
+    "split_payment": 2,
     "unidentified_receipt": 1,
-    "weekend_document": 2
+    "weekend_document": 4
   },
   "schema_version": "1.0",
   "seed": 2002,
@@ -52,9 +53,9 @@
       "kind": "combined_payment",
       "mimics": "payment_allocation",
       "records": [
-        "invoice/703M13",
-        "invoice/F53RR4",
-        "payment/XJNG1C"
+        "invoice/D4P6B0",
+        "invoice/S14BEQ",
+        "payment/S4KDEV"
       ],
       "twin_id": "TW-01"
     },
@@ -63,16 +64,16 @@
       "kind": "late_entry",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/SEY2AM"
+        "invoice/W9AMM6"
       ],
       "twin_id": "TW-02"
     },
     {
-      "distinguishing_feature": "a receipt whose UTC date is in another period than the company-local date it is posted on",
+      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
       "kind": "midnight_utc",
       "mimics": "period_cutoff",
       "records": [
-        "payment/J31P1D"
+        "invoice/GAXZ7M"
       ],
       "twin_id": "TW-03"
     },
@@ -81,39 +82,40 @@
       "kind": "monthly_subscription",
       "mimics": "duplicate_invoice",
       "records": [
-        "invoice/A7KNVJ",
-        "invoice/NBXG1V"
+        "invoice/EJ81BG",
+        "invoice/XX2VG2"
       ],
       "twin_id": "TW-04"
-    },
-    {
-      "distinguishing_feature": "payment above the open amount, the excess lies on 3510",
-      "kind": "overpayment",
-      "mimics": "payment_allocation",
-      "records": [
-        "invoice/YKHQK5",
-        "payment/F0JKJZ"
-      ],
-      "twin_id": "TW-05"
     },
     {
       "distinguishing_feature": "payment above the invoice, the excess on 3510, later refunded out of 3510 with no invoice named",
       "kind": "overpayment_and_refund",
       "mimics": "payment_allocation",
       "records": [
-        "invoice/P6KKFE",
-        "payment/RBAA9J",
-        "payment/XG40TA"
+        "invoice/Y87W5T",
+        "payment/31P1DS",
+        "payment/CGVBJT"
       ],
-      "twin_id": "TW-06"
+      "twin_id": "TW-05"
     },
     {
       "distinguishing_feature": "bank amount below the invoice, the whole payment allocated",
       "kind": "real_partial_payment",
       "mimics": "payment_allocation",
       "records": [
-        "invoice/GTW3HA",
-        "payment/EF1XHR"
+        "invoice/5XZMK5",
+        "payment/C46D6C"
+      ],
+      "twin_id": "TW-06"
+    },
+    {
+      "distinguishing_feature": "the second payment is the full total although part was paid: allocated up to the open amount, the excess lies on 3510",
+      "kind": "repeated_full_payment",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/NN5H7N",
+        "payment/FG0PST",
+        "payment/MMAQ78"
       ],
       "twin_id": "TW-07"
     },
@@ -122,13 +124,13 @@
       "kind": "weekend_document",
       "mimics": "fx_rate",
       "records": [
-        "payment/J31P1D"
+        "payment/ED6030"
       ],
       "twin_id": "TW-08"
     }
   ],
   "world": {
-    "documents": 173,
+    "documents": 168,
     "foreign_pct": 20,
     "industry": "wholesale",
     "period": "2026-12",

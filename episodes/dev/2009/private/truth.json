@@ -1,20 +1,20 @@
 {
   "clean": false,
-  "episode_id": "N66GMB",
+  "episode_id": "K3B2VE",
   "issues": [
     {
       "affected_ids": [
-        "ledger/9XNW9Z"
+        "ledger/W5V8EB"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/WRWXDY",
-          "ledger/9XNW9Z"
+          "invoice/5VHH8D",
+          "ledger/W5V8EB"
         ]
       ],
-      "expected_amount_minor": 147476000,
-      "issue_id": "4ZWJ5M",
+      "expected_amount_minor": 246294755,
+      "issue_id": "5JMNB3",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "period_cutoff"

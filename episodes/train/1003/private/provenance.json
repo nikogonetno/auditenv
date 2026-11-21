@@ -37,30 +37,42 @@
     {
       "changes": [
         {
-          "after": 215394440,
-          "before": 331375940,
+          "after": 152913600,
+          "before": 191142000,
           "field": "credit_minor",
-          "record": "ledger/FM10BP"
+          "record": "ledger/4E1BZ6"
         },
         {
-          "after": 215394440,
-          "before": 331375940,
+          "after": 296000,
+          "before": 370000,
           "field": "doc_amount_minor",
-          "record": "ledger/FM10BP"
+          "record": "ledger/4E1BZ6"
+        },
+        {
+          "after": 183520,
+          "before": 229400,
+          "field": "credit_minor",
+          "record": "ledger/B6W4WG"
+        },
+        {
+          "after": 183520,
+          "before": 229400,
+          "field": "doc_amount_minor",
+          "record": "ledger/B6W4WG"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/XE8HHB"
+          "record": "ledger/X54A46"
         }
       ],
       "injection_id": "INJ-01",
       "issue_ids": [
-        "A55NZ2"
+        "59Z5C0"
       ],
       "order": 1,
-      "root_cause": "allocation keyed as 215394440 instead of 331375940, the rest left on 3510",
+      "root_cause": "only part of the payment allocated to the invoice, 296000 of 370000; the rest 74000 lay on 3510",
       "scenario_id": null,
       "variant": "partial_allocation"
     },
@@ -70,90 +82,129 @@
           "after": "created",
           "before": null,
           "field": null,
-          "record": "invoice/RJNRYS"
+          "record": "invoice/4D2F4T"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/8D760H"
+          "record": "ledger/V7JPYR"
         },
         {
           "after": "created",
           "before": null,
           "field": null,
-          "record": "ledger/YD31Q6"
+          "record": "ledger/FH11N1"
         },
         {
           "after": [
-            "MABJBJ",
-            "RJNRYS"
+            "4D2F4T",
+            "B3QDYK"
           ],
           "before": [
-            "MABJBJ"
+            "B3QDYK"
           ],
           "field": "invoice_refs",
-          "record": "payment/15CXTM"
+          "record": "payment/J655BH"
         },
         {
-          "after": "RJNRYS",
-          "before": "MABJBJ",
+          "after": "4D2F4T",
+          "before": "B3QDYK",
           "field": "invoice_id",
-          "record": "ledger/AMDQS5"
+          "record": "ledger/NGFWHG"
         }
       ],
       "injection_id": "INJ-02",
       "issue_ids": [
-        "PAPZWZ"
+        "FCP18W"
       ],
       "order": 2,
-      "root_cause": "vendor bill keyed twice; the payment, whose reference names both records, was allocated to the copy",
+      "root_cause": "one vendor bill keyed twice; the payment, whose reference names both records, was allocated to one of them, and the other stayed open",
       "scenario_id": "C2",
       "variant": "duplicate_then_paid"
     }
   ],
   "other_lookalikes": {
-    "combined_payment": 7,
-    "late_entry": 5,
-    "midnight_utc": 2,
-    "monthly_subscription": 4,
-    "overpayment_and_refund": 1,
-    "real_partial_payment": 2,
-    "repeated_full_payment": 2,
-    "split_payment": 1,
-    "unidentified_receipt": 2,
-    "weekend_document": 1
+    "combined_payment": 1,
+    "late_entry": 6,
+    "midnight_utc": 1,
+    "monthly_subscription": 5,
+    "real_partial_payment": 1,
+    "repeated_full_payment": 3,
+    "unidentified_receipt": 1,
+    "weekend_document": 3
   },
   "schema_version": "1.0",
   "seed": 1003,
   "twins": [
     {
-      "distinguishing_feature": "the payment names both records and is allocated in full to the copy; the only error is the duplicate",
+      "distinguishing_feature": "the payment names both records and is allocated in full to one of them; the only error is the duplicate",
       "kind": "c2_trap",
       "mimics": "payment_allocation",
       "records": [
-        "invoice/MABJBJ",
-        "payment/15CXTM"
+        "invoice/B3QDYK",
+        "payment/J655BH"
       ],
       "twin_id": "TW-01"
+    },
+    {
+      "distinguishing_feature": "one payment cites two different bills of the vendor and settles both",
+      "kind": "combined_payment",
+      "mimics": "duplicate_invoice",
+      "records": [
+        "invoice/FGQDMK",
+        "invoice/G5X3BC",
+        "payment/PHNE44"
+      ],
+      "twin_id": "TW-02"
     },
     {
       "distinguishing_feature": "entered after the period, posted on the document date",
       "kind": "late_entry",
       "mimics": "period_cutoff",
       "records": [
-        "invoice/ZBAHP7"
+        "invoice/CGPGTP"
       ],
-      "twin_id": "TW-02"
+      "twin_id": "TW-03"
+    },
+    {
+      "distinguishing_feature": "the UTC or the issuer's date is in another period than the company-local date it is posted on",
+      "kind": "midnight_utc",
+      "mimics": "period_cutoff",
+      "records": [
+        "invoice/K8XYPN"
+      ],
+      "twin_id": "TW-04"
+    },
+    {
+      "distinguishing_feature": "same vendor and amount, other vendor_ref and service month",
+      "kind": "monthly_subscription",
+      "mimics": "duplicate_invoice",
+      "records": [
+        "invoice/7WAM4W",
+        "invoice/A2EXT4"
+      ],
+      "twin_id": "TW-05"
+    },
+    {
+      "distinguishing_feature": "payment above the invoice, the excess on 3510, later refunded out of 3510 with no invoice named",
+      "kind": "overpayment_and_refund",
+      "mimics": "payment_allocation",
+      "records": [
+        "invoice/E6YQQG",
+        "payment/7F0BZR",
+        "payment/XZRBXB"
+      ],
+      "twin_id": "TW-06"
     },
     {
       "distinguishing_feature": "dated on a non-business day, rate of the previous business day by the policy",
       "kind": "weekend_document",
       "mimics": "fx_rate",
       "records": [
-        "invoice/VZR55E"
+        "invoice/T4KG0V"
       ],
-      "twin_id": "TW-03"
+      "twin_id": "TW-07"
     }
   ],
   "world": {

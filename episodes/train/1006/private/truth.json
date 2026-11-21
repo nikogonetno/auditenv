@@ -1,57 +1,57 @@
 {
   "clean": false,
-  "episode_id": "ANF76N",
+  "episode_id": "F8E1WN",
   "issues": [
     {
       "affected_ids": [
-        "invoice/99WEMB",
-        "payment/NSWPVB"
+        "ledger/0ET6KA"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/99WEMB",
-          "ledger/8FRQ16",
-          "ledger/JREA2W",
-          "payment/NSWPVB"
+          "invoice/96Q9M3",
+          "ledger/0ET6KA"
         ]
       ],
-      "expected_amount_minor": 47712000,
-      "issue_id": "FSVHZ3",
-      "scenario_id": null,
-      "tolerance_minor": 1,
-      "type": "payment_allocation"
-    },
-    {
-      "affected_ids": [
-        "ledger/K8H2DN"
-      ],
-      "currency": "KZT",
-      "evidence_sets": [
-        [
-          "invoice/EM1NZ1",
-          "ledger/K8H2DN"
-        ]
-      ],
-      "expected_amount_minor": 122500000,
-      "issue_id": "QCKHM2",
+      "expected_amount_minor": 301000000,
+      "issue_id": "A06T7A",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "period_cutoff"
     },
     {
       "affected_ids": [
-        "ledger/NG95MB"
+        "invoice/30X9R8",
+        "payment/8MSAC8"
       ],
       "currency": "KZT",
       "evidence_sets": [
         [
-          "invoice/7ZP7QE",
-          "ledger/NG95MB"
+          "invoice/30X9R8",
+          "ledger/3G9CP2",
+          "ledger/4MP7PJ",
+          "payment/8MSAC8"
         ]
       ],
-      "expected_amount_minor": 62000000,
-      "issue_id": "QKR4FR",
+      "expected_amount_minor": 250484000,
+      "issue_id": "GJMWB4",
+      "scenario_id": null,
+      "tolerance_minor": 1,
+      "type": "payment_allocation"
+    },
+    {
+      "affected_ids": [
+        "ledger/R6DBCR"
+      ],
+      "currency": "KZT",
+      "evidence_sets": [
+        [
+          "invoice/M3F2T7",
+          "ledger/R6DBCR"
+        ]
+      ],
+      "expected_amount_minor": 261350560,
+      "issue_id": "K5FG19",
       "scenario_id": null,
       "tolerance_minor": 1,
       "type": "period_cutoff"
