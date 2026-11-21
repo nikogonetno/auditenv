@@ -86,7 +86,10 @@ class EpisodeSets(unittest.TestCase):
         policy.write_text("import json, sys\nsys.stdin.readline()\n"
                           "print(json.dumps({'action': 'submit', 'findings': {'episode_id': 'WRONG', 'findings': "
                           "[{'type': 'x'}]}}), flush=True)\nsys.stdin.readline()\n", encoding="utf-8")
-        proc = run_cli("--policy-cmd", f"{sys.executable} {policy}", "--config", str(self.set_file), "--mode", "train")
+        # The summary is the point here, not the sandbox: in the image the policy file in this root-only
+        # temporary folder would be out of reach for auditpolicy.
+        proc = run_cli("--policy-cmd", f"{sys.executable} {policy}", "--config", str(self.set_file), "--mode", "train",
+                       "--sandbox", "off")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         first, second, total = lines(proc.stdout)
         self.assertEqual((first["error"], first["tp"]), ("episode_id_mismatch", None))
