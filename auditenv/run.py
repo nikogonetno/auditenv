@@ -284,10 +284,14 @@ def load_config(text):
     return config
 
 
+STOP_SIGNALS = ("SIGINT", "SIGTERM", "SIGHUP")
+
+
 def _stop(signum, frame):
-    """SIGTERM or SIGHUP: leave through every finally block, as Ctrl-C does, so the policy process group is
-    killed and the temporary folders (the policy's, the set check's) are removed (QA L17)."""
-    for name in ("SIGTERM", "SIGHUP"):
+    """Ctrl-C, SIGTERM or SIGHUP: leave through every finally block, so the policy process group is killed and
+    the temporary folders (the policy's, the set check's) are removed (QA L17), with one line on stderr and
+    no traceback (QA L19)."""
+    for name in STOP_SIGNALS:
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), signal.SIG_IGN)   # the cleanup itself must not be cut short
     try:  # raw write: a closed stderr (a hung-up terminal) must not turn the exit code into 120
@@ -295,6 +299,26 @@ def _stop(signum, frame):
     except OSError:
         pass
     raise SystemExit(128 + signum)
+
+
+def emit(obj):
+    """One report line on stdout. When the reader went away (`| head -1`) the run stops quietly, as a SIGPIPE
+    would stop it, through the finally blocks; no traceback, no exit code 120 (QA L19)."""
+    try:
+        sys.stdout.write(encode_line(obj))
+        sys.stdout.flush()
+    except BrokenPipeError:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())   # the flush at exit must not fail again
+        raise SystemExit(128 + getattr(signal, "SIGPIPE", 13)) from None
+
+
+def close_logs(*files):
+    for f in files:
+        if f is not None:
+            try:
+                f.close()
+            except OSError:  # the data that did not fit is already reported
+                pass
 
 
 def open_log(path):
@@ -325,7 +349,7 @@ def main(argv=None):
     # The seed and config never stay in this process's command line (QA N-1).
     args = parse_args(hide_private_args() if argv is None else argv)
     os.umask(0o077)  # trajectories and the grader log stay unreadable for the sandbox user
-    for name in ("SIGTERM", "SIGHUP"):
+    for name in STOP_SIGNALS:
         sig = getattr(signal, name, None)
         # A signal ignored at start stays ignored, as Python does for SIGINT: `nohup` keeps working.
         if sig is not None and signal.getsignal(sig) is not signal.SIG_IGN:
@@ -360,9 +384,7 @@ def main(argv=None):
         grader = open_log(args.grader_log) if args.grader_log else None
     except OSError as exc:  # e.g. no permission to write there
         print(f"auditenv.run: cannot open {exc.filename}: {exc.strerror}", file=sys.stderr)
-        for f in (trajectory, grader):
-            if f is not None:
-                f.close()
+        close_logs(trajectory, grader)
         return 2
     reports, counts = [], []
     try:
@@ -379,27 +401,29 @@ def main(argv=None):
                 print(f"auditenv.run: {where}cannot start the policy: {exc.strerror}: {exc.filename}",
                       file=sys.stderr)
                 return 2
-            if trajectory is not None:
-                trajectory.write(text.getvalue())
-                trajectory.flush()
             counts.append(episode_counts(env, text.getvalue()))
             entry = env.grader_log[-1]
-            if grader is not None:
-                grader.write(encode_line(entry))
-                grader.flush()
+            for f, line, path in ((trajectory, text.getvalue(), args.trajectories),
+                                  (grader, encode_line(entry), args.grader_log)):
+                if f is None:
+                    continue
+                try:
+                    f.write(line)
+                    f.flush()
+                except OSError as exc:  # a full disk: one line, and say where the logs stop (QA L19)
+                    print(f"auditenv.run: {where}cannot write {path}: {exc.strerror}; the logs are incomplete "
+                          f"from episode {entry.get('episode_id')} on", file=sys.stderr)
+                    return 2
             report = summary(args, seed, config, result, entry)
             if info is not None:
                 report["episode_set"] = info["version"]
             reports.append(report)
-            sys.stdout.write(encode_line(report))
-            sys.stdout.flush()
+            emit(report)
     finally:
-        for f in (trajectory, grader):
-            if f is not None:
-                f.close()
+        close_logs(trajectory, grader)
         hand_back([args.trajectories, args.grader_log])
     if info is not None and args.seed is None:
-        sys.stdout.write(encode_line(set_summary(info, reports, counts)))
+        emit(set_summary(info, reports, counts))
     return 0
 
 
