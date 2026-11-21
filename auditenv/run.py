@@ -1,11 +1,14 @@
-"""Run one baseline policy on one episode and report the grade (case §06, §09).
+"""Run one policy on one episode and report the grade (case §06, §09).
 
-    python -m auditenv.run --policy {random,reconcile,flag_all,oracle} (--episode-dir DIR | --config JSON)
-                           [--mode train|eval] [--seed N] [--policy-seed N] [--time-limit S]
-                           [--trajectories PATH] [--grader-log PATH]
+    python -m auditenv.run (--policy {random,reconcile,flag_all,oracle} | --policy-cmd COMMAND)
+                           (--episode-dir DIR | --config JSON) [--mode train|eval] [--seed N] [--policy-seed N]
+                           [--time-limit S] [--sandbox auto|required|off] [--trajectories PATH] [--grader-log PATH]
 
 random, reconcile and flag_all run as separate processes (`python3 -m policies.<name> <seed>`) and see only
-JSON observations. oracle is grader-side (case §06) and runs in-process with truth from the env.
+JSON observations. --policy-cmd runs any external policy the same way, with the same limits, sandbox, grader
+log and trajectories (protocol: README section 4); a relative path to an existing file in the command is
+made absolute, because the policy starts in an empty working directory. oracle is grader-side (case §06)
+and runs in-process with truth from the env.
 --seed goes to env.reset only; the policy gets its own --policy-seed, because the agent must never
 see the episode seed (case §03).
 The printed summary line is the evaluator's own report: it is never shown to the policy, so it
@@ -14,21 +17,30 @@ carries the grade in eval mode too. --trajectories and --grader-log append one J
 import argparse
 import json
 import os
+import shlex
 import sys
 
 from .env import MODES, AuditEnv
 from .private_args import hide_private_args
-from .runner import SANDBOX_MODES, TIME_LIMIT_S, encode_line, run_inprocess_episode, run_subprocess_episode
+from .runner import (SANDBOX_MODES, TIME_LIMIT_S, encode_line, run_inprocess_episode, run_subprocess_episode,
+                     sandbox_user)
 
 SUBPROCESS_POLICIES = {"random": "policies.random_policy", "reconcile": "policies.reconcile", "flag_all": "policies.flag_all"}
 POLICIES = (*SUBPROCESS_POLICIES, "oracle")
 REPORT_KEYS = ("tp", "fp", "fn", "precision", "recall", "f1", "reward")
+EXTERNAL = "external"     # the policy name in the report of a --policy-cmd run
+NO_SANDBOX_WARNING = ("auditenv.run: WARNING: eval run without the sandbox: the policy runs as this user and "
+                      "can read private/ (the truth); run the closed evaluation only in Docker, see README "
+                      "\"Закрытый прогон жюри\"")
 
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(prog="python -m auditenv.run", description=__doc__.split("\n\n")[0],
                                      allow_abbrev=False)  # see auditenv.private_args
-    parser.add_argument("--policy", required=True, choices=POLICIES)
+    who = parser.add_mutually_exclusive_group(required=True)
+    who.add_argument("--policy", choices=POLICIES)
+    who.add_argument("--policy-cmd", metavar="COMMAND",
+                     help='an external policy process, e.g. "python3 my_policy.py" (protocol: README section 4)')
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--episode-dir", help="a prepared episode in the case §03 layout")
     source.add_argument("--config", help="generator config v1 (SPEC §4.4): a JSON file or inline JSON; uses --seed")
@@ -43,17 +55,33 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def run_policy(policy, env, seed, config, policy_seed=0, time_limit=TIME_LIMIT_S, trajectory=None, sandbox="auto"):
-    """Runner result for one named baseline policy."""
+def policy_command(text):
+    """argv of a --policy-cmd string. Relative paths to existing files become absolute (the policy starts in
+    an empty working directory); the program itself is looked up in PATH unless it names a path."""
+    argv = shlex.split(text)
+    if not argv:
+        raise ValueError("--policy-cmd is empty")
+    return [os.path.abspath(arg) if (n or os.sep in arg) and not os.path.isabs(arg) and os.path.isfile(arg)
+            else arg for n, arg in enumerate(argv)]
+
+
+def run_policy(policy, env, seed, config, policy_seed=0, time_limit=TIME_LIMIT_S, trajectory=None, sandbox="auto",
+               policy_cmd=None):
+    """Runner result for one named baseline policy, or for the external command policy_cmd (an argv list)."""
     if policy == "oracle":
         from policies.oracle import make_env_oracle  # grader-side, in this process only
         return run_inprocess_episode(make_env_oracle(env), env, seed, config, trajectory=trajectory)
-    cmd = [sys.executable, "-m", SUBPROCESS_POLICIES[policy], str(policy_seed)]
-    return run_subprocess_episode(cmd, env, seed, config, time_limit=time_limit, trajectory=trajectory, sandbox=sandbox)
+    if policy_cmd is None:
+        policy_cmd = [sys.executable, "-m", SUBPROCESS_POLICIES[policy], str(policy_seed)]
+    return run_subprocess_episode(policy_cmd, env, seed, config, time_limit=time_limit, trajectory=trajectory,
+                                  sandbox=sandbox)
 
 
 def summary(args, result, entry):
-    report = {"policy": args.policy, "mode": args.mode, "seed": args.seed, "policy_seed": args.policy_seed, **result}
+    report = {"policy": args.policy or EXTERNAL, "mode": args.mode, "seed": args.seed, "policy_seed": args.policy_seed,
+              **result}
+    if args.policy_cmd is not None:
+        report["policy_cmd"] = args.policy_cmd
     report.update({key: entry.get(key) for key in REPORT_KEYS})
     report["inspection_steps"] = entry.get("inspection_steps")
     if "error" in entry:
@@ -84,13 +112,16 @@ def main(argv=None):
     env = AuditEnv(args.mode)
     try:
         config = {"episode_dir": args.episode_dir} if args.episode_dir else load_config(args.config)
+        policy_cmd = policy_command(args.policy_cmd) if args.policy_cmd is not None else None
     except ValueError as exc:
         print(f"auditenv.run: {exc}", file=sys.stderr)
         return 2
+    if args.mode == "eval" and args.policy != "oracle" and (args.sandbox == "off" or sandbox_user() is None):
+        print(NO_SANDBOX_WARNING, file=sys.stderr, flush=True)  # warn only: our own scripts run like this (QA N-3)
     trajectory = open(args.trajectories, "a", encoding="utf-8", newline="\n") if args.trajectories else None
     try:
         result = run_policy(args.policy, env, args.seed, config, args.policy_seed, args.time_limit, trajectory,
-                            args.sandbox)
+                            args.sandbox, policy_cmd)
     except (ValueError, RuntimeError) as exc:  # broken config or episode directory, or no sandbox when required
         print(f"auditenv.run: {exc}", file=sys.stderr)
         return 2
