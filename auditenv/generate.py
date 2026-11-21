@@ -294,7 +294,9 @@ def _truth(final, book, injections, ids, public_text):
 # ---------------------------------------------------------------- provenance
 def _changes(world, clean_book, final, book, ids, injections):
     """Changes per injection: every record of the final book that differs from the clean one, by field.
-    A difference no injection claims is a generator bug (domain spec A, provenance)."""
+    A created record has after "created"; a removed ledger row has before "removed" and its full content,
+    as a row of ledger.csv, under "row". A difference no injection claims is a generator bug (domain spec A,
+    provenance)."""
     def records(w, b):
         out = {}
         for inv in w.invoices.values():
@@ -324,7 +326,12 @@ def _changes(world, clean_book, final, book, ids, injections):
         if old is None:
             changes[owner[doc]].append({"record": ref, "field": None, "before": None, "after": "created"})
         elif new is None:
-            changes[owner[doc]].append({"record": ref, "field": None, "before": "removed", "after": None})
+            if ":" not in key:
+                raise WorldError(f"{key} removed by an injection")   # injections never remove a document
+            # The whole removed ledger row, so the book before the error can be rebuilt from provenance
+            # (case §10, docs/tasks/B_afternoon.md item 3).
+            changes[owner[doc]].append({"record": ref, "field": None, "before": "removed", "after": None,
+                                        "row": old})
         else:
             for name in sorted(set(old) | set(new)):
                 if old.get(name) != new.get(name):
