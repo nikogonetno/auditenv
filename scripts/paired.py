@@ -4,7 +4,8 @@
 
 An EPISODE_DIR may also be a split directory (episodes/dev): its episodes are taken in name order.
 
-Two kinds of check alternate, over the given episodes in turn, until n checks are done:
+Every one of the n checks, over the given episodes in turn, does both of these and passes only if both do
+(case §06: the 20 paired checks change the order and the ids; PM 21.11 14.45):
   repeat     one baseline policy (cycling random, reconcile, flag_all, oracle) runs twice on the same
              episode with the same seed and policy seed, each time in a fresh AuditEnv: the trajectories
              must be byte-identical and the grader log entries (reward included) equal
@@ -14,7 +15,7 @@ Two kinds of check alternate, over the given episodes in turn, until n checks ar
              currency) as the original, and every id in either truth names a record of its episode
 
 The default transform is auditenv.transform.permute_and_rename. Without a transform function every check is
-a repeat check and the summary says the transform is skipped. Prints one JSON line per check and a summary line; exit 1 if any
+only a repeat check and the summary says the transform is skipped. Prints one JSON line per check and a summary line; exit 1 if any
 check fails, 0 otherwise (a skip is not a failure), 2 on bad arguments.
 """
 import argparse
@@ -57,18 +58,17 @@ def load_transform(spec):
     return getattr(module, func, None) if func else None
 
 
+BOTH = "repeat+transform"
+
+
 def plan(n, episodes, with_transform):
-    """[(check number, kind, episode, policy)] for n checks."""
+    """[(check number, kind, episode, policy of the repeat)] for n checks."""
     rounds = math.lcm(len(episodes), len(REPEAT_POLICIES))
     checks = []
     for k in range(n):
-        if with_transform:
-            kind, j = ("repeat" if k % 2 == 0 else "transform"), k // 2
-        else:
-            kind, j = "repeat", k
         # The policy cycle shifts by one after each full round, so every episode meets every policy.
-        policy = REPEAT_POLICIES[(j + j // rounds) % len(REPEAT_POLICIES)] if kind == "repeat" else "oracle,reconcile"
-        checks.append((k + 1, kind, episodes[j % len(episodes)], policy))
+        policy = REPEAT_POLICIES[(k + k // rounds) % len(REPEAT_POLICIES)]
+        checks.append((k + 1, BOTH if with_transform else "repeat", episodes[k % len(episodes)], policy))
     return checks
 
 
@@ -165,13 +165,17 @@ def run_paired(episodes, n=20, transform=None, runner=run_policy, out=None):
     rows = []
     with tempfile.TemporaryDirectory(prefix="auditenv-paired-") as workdir:
         for number, kind, episode_dir, policy in plan(n, list(episodes), transform is not None):
-            try:
-                if kind == "repeat":
-                    ok, detail = repeat_check(runner, policy, episode_dir, number)
-                else:
-                    ok, detail = transform_check(runner, transform, episode_dir, number, workdir)
-            except Exception as exc:  # report and go on: one broken check must not hide the others
-                ok, detail = False, f"{type(exc).__name__}: {exc}"
+            parts = []
+            for part in kind.split("+"):
+                try:
+                    if part == "repeat":
+                        parts.append((part, *repeat_check(runner, policy, episode_dir, number)))
+                    else:
+                        parts.append((part, *transform_check(runner, transform, episode_dir, number, workdir)))
+                except Exception as exc:  # report and go on: one broken check must not hide the others
+                    parts.append((part, False, f"{type(exc).__name__}: {exc}"))
+            ok = all(part_ok for _, part_ok, _ in parts)
+            detail = "; ".join(f"{part}: {text}" for part, _, text in parts)
             row = {"check": number, "kind": kind, "episode": str(episode_dir), "policy": policy,
                    "ok": ok, "detail": detail}
             rows.append(row)
@@ -180,8 +184,8 @@ def run_paired(episodes, n=20, transform=None, runner=run_policy, out=None):
                 out.flush()
     passed = sum(row["ok"] for row in rows)
     summary = {"paired": "OK" if passed == len(rows) else "FAIL", "passed": passed, "total": len(rows),
-               "repeat": sum(row["kind"] == "repeat" for row in rows),
-               "transform": sum(row["kind"] == "transform" for row in rows) if transform is not None else SKIPPED}
+               "repeat": sum("repeat" in row["kind"] for row in rows),
+               "transform": sum("transform" in row["kind"] for row in rows) if transform is not None else SKIPPED}
     if out is not None:
         out.write(json.dumps(summary, sort_keys=True, ensure_ascii=False) + "\n")
     return rows, summary

@@ -123,6 +123,8 @@ def check_seed(seed, config, generator, generator_spec, verifier, workdir, stric
         digests[f"hash_{hash_seed}"] = tree_digest(again)
     if len(set(digests.values())) != 1:
         row["failures"].append(f"determinism: sha256 differs {digests}")
+    else:
+        row["identical_under_hash_seeds"] = True
     return row
 
 
@@ -144,16 +146,21 @@ def main(argv=None):
         configs = [normalize_config(c) for c in json.load(f)["configs"]]
     verifier = load_verifier()
 
-    failed = 0
+    failed = identical = 0
     with tempfile.TemporaryDirectory(prefix="auditenv-stress-") as workdir:
         for k in range(args.n):
             seed = args.start + k
             row = check_seed(seed, configs[k % len(configs)], generator, args.generator, verifier, workdir,
                              strict_volume=not args.no_strict_volume)
             failed += bool(row["failures"])
+            identical += bool(row.get("identical_under_hash_seeds"))
             print(json.dumps(row, sort_keys=True, ensure_ascii=False), flush=True)
+    seeds_text = " and ".join(str(h) for h in HASH_SEEDS)
     summary = {"stress": "FAIL" if failed else "OK", "seeds": args.n, "failed": failed,
-               "verifier": "on" if verifier else "skipped", "strict_volume": not args.no_strict_volume}
+               "verifier": "on" if verifier else "skipped", "strict_volume": not args.no_strict_volume,
+               # QA L8: the byte-for-byte check under other hash seeds is visible in make verify.
+               "determinism": f"{identical} of {args.n} episodes byte-identical in fresh processes with "
+                              f"PYTHONHASHSEED {seeds_text}"}
     print(json.dumps(summary, sort_keys=True))
     return 1 if failed else 0
 

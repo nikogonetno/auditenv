@@ -42,7 +42,7 @@ episodes:
 metrics:
 	$(PY) scripts/metrics.py episodes/train episodes/dev --policies $(METRICS_POLICIES) --out docs/METRICS.md --json runs/metrics.json
 
-# 20 paired checks (case §10): repeat seed and actions; permutation and new ids once A's transform lands.
+# 20 paired checks (case §06, §10): each repeats seed and actions and permutes rows with new ids.
 paired:
 	$(PY) scripts/paired.py episodes/dev --n 20
 
