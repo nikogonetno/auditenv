@@ -1,7 +1,8 @@
 """reset/step contract of case §04 (role B).
 
-    reset(seed, config) -> (observation, info)
+    reset(seed, config) -> (observation, info)    also reset(seed=..., options=...), Gymnasium style
     step(action)        -> (observation, reward, terminated, truncated, info)
+    close()             -> None, nothing to release
 
 An action is a JSON object {"action": <name>, ...arguments}:
     list_records   table, cursor (optional), limit (optional, 1..50, default 50)
@@ -59,14 +60,21 @@ class AuditEnv:
         self._episode = None
 
     # ------------------------------------------------------------------ contract
-    def reset(self, seed=None, config=None):
+    def reset(self, seed=None, config=None, *, options=None):
         """Start a fresh episode.
 
         config {"episode_dir": path} loads a prepared episode and allows no other key. Any other
         config is a generator config (SPEC §4.4): it is normalized, the episode is generated from
         (seed, config) into a private temp dir, loaded with its truth and the dir is deleted, so
         nothing of it stays on disk. ValueError on a bad config, seed or episode.
+
+        options is the Gymnasium name of config, for reset(seed=..., options=...); passing both is
+        a ValueError.
         """
+        if options is not None:
+            if config is not None:
+                raise ValueError("pass config or options, not both")
+            config = options
         config = {} if config is None else config
         if type(config) is not dict:
             raise ValueError("config must be an object")
@@ -136,6 +144,10 @@ class AuditEnv:
             return self._finish_empty(body)
         body["steps_left"] = MAX_STEPS - self._steps
         return body, 0.0, False, False, {}
+
+    def close(self):
+        """Gymnasium close(): the env holds no open files or processes, so there is nothing to release."""
+        return None
 
     def truncate(self):
         """Wall-clock limit (60 s per episode): end with an empty answer charged for 100 steps."""

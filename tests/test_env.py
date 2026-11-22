@@ -345,3 +345,27 @@ class GeneratedEpisodes(unittest.TestCase):
         self.assertEqual(obs, again)
         self.assertEqual(obs["manifest"]["episode_id"], env._truth["episode_id"])
         self.assertEqual(len(env._truth["issues"]), 2)
+
+
+class GymnasiumCalls(unittest.TestCase):
+    """A Gymnasium-style harness calls reset(seed=..., options=...) and close() (SPEC §4.2)."""
+
+    def test_options_work_as_the_config(self):
+        expected = AuditEnv("train").reset(7, {})
+        self.assertEqual(expected[0]["manifest"]["episode_id"], "EGGYPY")
+        calls = {"seed=7, options={}": lambda env: env.reset(seed=7, options={}),
+                 "seed=7, options=None": lambda env: env.reset(seed=7, options=None),
+                 "7, {}, options=None": lambda env: env.reset(7, {}, options=None)}
+        for name, call in calls.items():
+            with self.subTest(call=name):
+                self.assertEqual(call(AuditEnv("train")), expected)
+
+    def test_config_and_options_together_are_a_value_error(self):
+        for call in (lambda env: env.reset(7, {}, options={}), lambda env: env.reset(seed=7, config={}, options={})):
+            with self.assertRaisesRegex(ValueError, "config or options, not both"):
+                call(AuditEnv("train"))
+
+    def test_close_does_nothing_and_can_be_called_twice(self):
+        env = AuditEnv("train")
+        self.assertIsNone(env.close())
+        self.assertIsNone(env.close())
