@@ -23,7 +23,7 @@ from .inject import inject_errors, plan
 from .world import (ACCOUNTS, BASE, MINOR_UNITS, WEEKEND_DAYS, Invoice, WorldError, build_world, check_book, conv,
                     post)
 
-GENERATOR_VERSION = "0.1.0"
+GENERATOR_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0"
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 LEDGER_TIME = "T12:00:00"

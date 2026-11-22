@@ -42,6 +42,14 @@ class Skeleton(unittest.TestCase):
         self.assertIn("Permission is hereby granted, free of charge", text)
         self.assertIn("FROM python:3.11.11-slim-bookworm", (ROOT / "Dockerfile").read_text(encoding="utf-8"))
 
+    def test_one_version_in_pyproject_the_package_and_the_generator(self):
+        """Release 1.0.0: code_version of the run report and generator_version of provenance.json agree."""
+        import auditenv
+        from auditenv.generate import GENERATOR_VERSION
+        with open(ROOT / "pyproject.toml", "rb") as f:
+            project = tomllib.load(f)["project"]
+        self.assertEqual((project["version"], auditenv.__version__, GENERATOR_VERSION), ("1.0.0",) * 3)
+
 
 if __name__ == "__main__":
     unittest.main()

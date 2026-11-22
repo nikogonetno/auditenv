@@ -32,7 +32,7 @@
     ]
   },
   "config_sha256": "91b58f023516033e11726eb86545d5e05348021314c1092651136f8b8622327c",
-  "generator_version": "0.1.0",
+  "generator_version": "1.0.0",
   "injections": [
     {
       "changes": [

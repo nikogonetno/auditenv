@@ -68,7 +68,7 @@ python3 -m auditenv.run --policy oracle --mode eval --episode-dir out/ep7
 Вывод это одна строка JSON:
 
 ```json
-{"code_version": "0.0.1", "config_sha256": "282e69dc9bf14e7fe9e29a79ebd6c61ff6fbd9cde81b706c7e8b61ee31e04c3a", "episode_id": "EGGYPY", "f1": 1.0, "fn": 0, "fp": 0, "inspection_steps": 0, "mode": "eval", "policy": "oracle", "policy_seed": 0, "precision": 1.0, "recall": 1.0, "reward": 1.0, "seed": 0, "seen_reward": 0.0, "steps": 1, "terminated": true, "tp": 4, "truncated": false, "wall_time_s": 0.001}
+{"code_version": "1.0.0", "config_sha256": "282e69dc9bf14e7fe9e29a79ebd6c61ff6fbd9cde81b706c7e8b61ee31e04c3a", "episode_id": "EGGYPY", "f1": 1.0, "fn": 0, "fp": 0, "inspection_steps": 0, "mode": "eval", "policy": "oracle", "policy_seed": 0, "precision": 1.0, "recall": 1.0, "reward": 1.0, "seed": 0, "seen_reward": 0.0, "steps": 1, "terminated": true, "tp": 4, "truncated": false, "wall_time_s": 0.001}
 ```
 
 Эпизод прямо из генератора, через `env.reset(seed, config)`:

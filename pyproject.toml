@@ -1,6 +1,6 @@
 [project]
 name = "auditenv"
-version = "0.0.1"
+version = "1.0.0"
 description = "Offline RL environment for an AI financial auditor: synthetic ledgers with hidden errors, narrow tools, strict grader"
 readme = "README.md"
 license = "MIT"                       # SPDX expression (PEP 639); the text is in LICENSE
