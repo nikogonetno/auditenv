@@ -12,6 +12,62 @@
 
 **Лицензия и зависимости.** Код под лицензией MIT, текст в [LICENSE](LICENSE). Зависимостей для запуска нет (`dependencies = []` в `pyproject.toml`), нужен Python 3.11 или новее; необязательный `pytest` для разработки закреплён на 8.3.4. Образ Docker закреплён на `python:3.11.11-slim-bookworm` и его digest `sha256:081075da…` (`Dockerfile`).
 
+## Для жюри
+
+Свою политику можно подключить тремя способами. Все команды запускаются из корня репозитория. Примеры этого раздела выполняет тест `tests/test_readme_jury.py`.
+
+**1. Python в одном процессе.** Политика это ваш код, который вызывает `reset(seed, config)` и затем `step(action)` до submit. Пакет не устанавливается, поэтому код запускается файлом в корне репозитория, через `python3 - < файл` или с `PYTHONPATH=.`:
+
+```python
+from auditenv.env import AuditEnv
+
+env = AuditEnv("train")                       # "eval": политика видит награду 0 и пустой info
+observation, info = env.reset(7, {})          # seed и config генератора (раздел 5)
+episode_id = observation["manifest"]["episode_id"]
+action = {"action": "list_records", "table": "ledger", "limit": 50}
+while True:
+    observation, reward, terminated, truncated, info = env.step(action)
+    if terminated or truncated:
+        break
+    cursor = observation["result"]["next_cursor"]
+    if cursor is not None:                    # следующая страница книги
+        action = {"action": "list_records", "table": "ledger", "cursor": cursor, "limit": 50}
+    else:                                     # книга прочитана: здесь ваша политика решает, что сдать
+        action = {"action": "submit", "findings": {"episode_id": episode_id, "findings": []}}
+print(episode_id, observation["steps_left"], reward, info["grading"])
+```
+
+Вывод:
+
+```text
+EGGYPY 91 -1.0 {'tp': 0, 'fp': 0, 'fn': 4, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
+```
+
+- **Эпизод.** Это тот же `EGGYPY`, что в разделах 2 и 3: seed 7, config по умолчанию, в книге 4 ошибки. Пример читает книгу за 8 шагов и сдаёт пустой ответ, поэтому награда −1, а шагов осталось 91 из 100.
+- **Контракт.** `step` возвращает `(observation, reward, terminated, truncated, info)`. Действия и лимиты описаны в разделе 4, config в разделе 5. В режиме `eval` политика видит награду 0 и пустой `info`, а оценка остаётся в `env.grader_log`.
+- **Только для отладки.** Политика в том же процессе может прочитать закрытый эталон, поэтому оценивать её нужно третьим способом.
+
+**2. Отдельный процесс, `--policy-cmd`.** Политика читает из stdin и пишет в stdout по строке JSON. Протокол описан в разделе 4, пример лежит в `examples/my_policy.py`:
+
+```bash
+python3 -m auditenv.run --policy-cmd "python3 examples/my_policy.py" --config '{}' --seed 7 --mode train
+```
+
+Раннер печатает одну строку отчёта, как в разделе 3. В ней `"policy": "external"`, `"steps": 2`, `"terminated": true` и `"reward": -1.0`: пример сдаёт пустой ответ на том же `EGGYPY`. Вне Docker политика работает от вашего пользователя и тоже может прочитать эталон.
+
+**3. Закрытый прогон набора в Docker.** Так политику оценивают. Она работает без сети от пользователя `auditpolicy` и не видит ни эталон, ни файл набора. `hidden_set.json` это набор в формате `configs/dev_v2.json`, `{version, split, episodes: [{seed, config}]}`:
+
+```bash
+docker build -t auditenv:dev .
+mkdir -m 755 policy && cp examples/my_policy.py policy/ && chmod -R a+rX policy
+mkdir -m 700 jury_in jury_out && cp hidden_set.json jury_in/
+docker run --rm --network none -v "$PWD/policy:/policy:ro" -v "$PWD/jury_in:/in:ro" -v "$PWD/jury_out:/out" auditenv:dev python3 -m auditenv.run --policy-cmd "python3 /policy/my_policy.py" --config /in/hidden_set.json --mode eval --sandbox required --trajectories /out/trajectories.jsonl --grader-log /out/grader_log.jsonl
+```
+
+- **Вывод.** Раннер печатает строку на эпизод и строку итога с P, R, F1 и средней наградой. Траектории и журнал оценщика лежат в `jury_out`, их можно читать без `sudo`.
+- **Своя политика.** Её файлы кладутся в `policy/` вместо `examples/my_policy.py`. Имя файла политики пишется дважды, в `cp` и в `--policy-cmd`.
+- **Подробности.** Права папок и ключи строки итога описаны в разделе 4, «Закрытый прогон жюри». CI запускает эти команды дословно на наборе из двух эпизодов dev.
+
 ## 1. Одна команда проверки
 
 ```bash
@@ -19,13 +75,15 @@ make verify
 ```
 
 Скрипт `scripts/verify.sh` выполняет три шага:
-1. юнит-тесты, 469 тестов на stdlib `unittest`;
+1. юнит-тесты, 476 тестов на stdlib `unittest`;
 2. стресс по одному seed на каждый из 11 config `configs/stress_v3.json`: генератор, строгий верификатор V, oracle 1.0, побайтная воспроизводимость в свежих процессах при `PYTHONHASHSEED` 0 и 1. Итоговая строка стресса это говорит прямо: `"determinism": "11 of 11 episodes byte-identical …"`;
 3. последняя строка вывода `verify: OK`.
 
 **Какие тесты пропускаются и где идут.** Каждый тест выполняется хотя бы в одном шаге CI.
 - **Без root** пропускаются 10 тестов песочницы: им нужен пользователь `auditpolicy` из Docker-образа. Они идут в Docker-шаге CI. Это класс `WithRoot` в `tests/test_sandbox.py` с проверкой закрытых папок образа, `tests/test_rehearsal_sandbox.py` и по одному тесту `test_in_docker_…` в `tests/test_policy_cmd.py` и `tests/test_episode_sets.py`.
-- **В Docker** пропускаются 4 теста режима без песочницы: там песочница есть всегда. Они идут в первом шаге CI, `make verify` на Python 3.11. Это класс `WithoutRoot` в `tests/test_sandbox.py` (2 теста), `test_eval_without_the_sandbox_warns_in_one_line_and_still_runs` и `test_sandbox_required_without_root_refuses_with_one_message`.
+- **В Docker** пропускаются 5 тестов. Они идут в первом шаге CI, `make verify` на Python 3.11.
+  - 4 теста режима без песочницы: там песочница есть всегда. Это класс `WithoutRoot` в `tests/test_sandbox.py` (2 теста), `test_eval_without_the_sandbox_warns_in_one_line_and_still_runs` и `test_sandbox_required_without_root_refuses_with_one_message`.
+  - `test_the_closed_run_is_the_command_of_the_ci_step` в `tests/test_readme_jury.py`: папка `.github` в образ не копируется.
 
 Детектор QA на старом эталоне `tests/fixtures/golden_v0.1` в единую команду не входит. Он запускается отдельно, `make qa`, и печатает замечания про прежнюю схему эталона: это ожидаемо и на проверку не влияет.
 
@@ -68,7 +126,7 @@ python3 -m auditenv.run --policy oracle --mode eval --episode-dir out/ep7
 Вывод это одна строка JSON:
 
 ```json
-{"code_version": "0.0.1", "config_sha256": "282e69dc9bf14e7fe9e29a79ebd6c61ff6fbd9cde81b706c7e8b61ee31e04c3a", "episode_id": "EGGYPY", "f1": 1.0, "fn": 0, "fp": 0, "inspection_steps": 0, "mode": "eval", "policy": "oracle", "policy_seed": 0, "precision": 1.0, "recall": 1.0, "reward": 1.0, "seed": 0, "seen_reward": 0.0, "steps": 1, "terminated": true, "tp": 4, "truncated": false, "wall_time_s": 0.001}
+{"code_version": "1.0.0", "config_sha256": "282e69dc9bf14e7fe9e29a79ebd6c61ff6fbd9cde81b706c7e8b61ee31e04c3a", "episode_id": "EGGYPY", "f1": 1.0, "fn": 0, "fp": 0, "inspection_steps": 0, "mode": "eval", "policy": "oracle", "policy_seed": 0, "precision": 1.0, "recall": 1.0, "reward": 1.0, "seed": 0, "seen_reward": 0.0, "steps": 1, "terminated": true, "tp": 4, "truncated": false, "wall_time_s": 0.001}
 ```
 
 Эпизод прямо из генератора, через `env.reset(seed, config)`:

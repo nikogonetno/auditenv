@@ -32,7 +32,7 @@
     ]
   },
   "config_sha256": "55c8e4e0e1373c9fe0f020d5ea9eba460ab747b870df8346756a2639cb9c07af",
-  "generator_version": "0.1.0",
+  "generator_version": "1.0.0",
   "injections": [],
   "other_lookalikes": {
     "combined_payment": 2,
