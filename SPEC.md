@@ -137,7 +137,7 @@
 
 ### 4.2 Действия, наблюдения, завершение [кейс §04, код `auditenv/env.py`]
 
-`AuditEnv(mode)` с режимами `train` и `eval`. `reset(seed, config)` возвращает `(observation, info)`, `step(action)` возвращает `(observation, reward, terminated, truncated, info)`. Всё JSON-совместимо.
+`AuditEnv(mode)` с режимами `train` и `eval`. `reset(seed, config)` возвращает `(observation, info)`, `step(action)` возвращает `(observation, reward, terminated, truncated, info)`. Всё JSON-совместимо. Для обвязки в стиле Gymnasium `reset` принимает config и под именем `options` (`reset(seed=7, options={})`, config и `options` вместе дают `ValueError`), а `close()` ничего не делает и возвращает `None`.
 
 Действие это JSON-объект `{"action": <имя>, ...аргументы}`:
 
