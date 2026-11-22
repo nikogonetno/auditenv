@@ -75,13 +75,15 @@ make verify
 ```
 
 Скрипт `scripts/verify.sh` выполняет три шага:
-1. юнит-тесты, 475 тестов на stdlib `unittest`;
+1. юнит-тесты, 476 тестов на stdlib `unittest`;
 2. стресс по одному seed на каждый из 11 config `configs/stress_v3.json`: генератор, строгий верификатор V, oracle 1.0, побайтная воспроизводимость в свежих процессах при `PYTHONHASHSEED` 0 и 1. Итоговая строка стресса это говорит прямо: `"determinism": "11 of 11 episodes byte-identical …"`;
 3. последняя строка вывода `verify: OK`.
 
 **Какие тесты пропускаются и где идут.** Каждый тест выполняется хотя бы в одном шаге CI.
 - **Без root** пропускаются 10 тестов песочницы: им нужен пользователь `auditpolicy` из Docker-образа. Они идут в Docker-шаге CI. Это класс `WithRoot` в `tests/test_sandbox.py` с проверкой закрытых папок образа, `tests/test_rehearsal_sandbox.py` и по одному тесту `test_in_docker_…` в `tests/test_policy_cmd.py` и `tests/test_episode_sets.py`.
-- **В Docker** пропускаются 4 теста режима без песочницы: там песочница есть всегда. Они идут в первом шаге CI, `make verify` на Python 3.11. Это класс `WithoutRoot` в `tests/test_sandbox.py` (2 теста), `test_eval_without_the_sandbox_warns_in_one_line_and_still_runs` и `test_sandbox_required_without_root_refuses_with_one_message`.
+- **В Docker** пропускаются 5 тестов. Они идут в первом шаге CI, `make verify` на Python 3.11.
+  - 4 теста режима без песочницы: там песочница есть всегда. Это класс `WithoutRoot` в `tests/test_sandbox.py` (2 теста), `test_eval_without_the_sandbox_warns_in_one_line_and_still_runs` и `test_sandbox_required_without_root_refuses_with_one_message`.
+  - `test_the_closed_run_is_the_command_of_the_ci_step` в `tests/test_readme_jury.py`: папка `.github` в образ не копируется.
 
 Детектор QA на старом эталоне `tests/fixtures/golden_v0.1` в единую команду не входит. Он запускается отдельно, `make qa`, и печатает замечания про прежнюю схему эталона: это ожидаемо и на проверку не влияет.
 

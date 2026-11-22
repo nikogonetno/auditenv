@@ -16,6 +16,7 @@ from pathlib import Path
 import auditenv
 
 ROOT = Path(__file__).resolve().parent.parent
+CI = ROOT / ".github" / "workflows" / "verify.yml"   # not in the Docker image (.dockerignore)
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 JURY = README.split("\n## Для жюри\n", 1)[1].split("\n## ", 1)[0]
 IN_PROCESS, POLICY_CMD, DOCKER = (JURY.split("\n**2. ", 1)[0], JURY.split("\n**2. ", 1)[1].split("\n**3. ", 1)[0],
@@ -58,17 +59,22 @@ class ReadmeForTheJury(unittest.TestCase):
         self.assertEqual(report["episode_id"], "EGGYPY")
         self.assertEqual(report["code_version"], auditenv.__version__)
 
-    def test_the_closed_run_is_the_one_of_section_4_and_of_ci(self):
+    def test_the_closed_run_is_the_one_of_section_4(self):
         (jury,) = blocks(DOCKER, "bash")
         build, *run = jury.splitlines(keepends=True)
         section4 = README.split("\n## 4. ", 1)[1].split("\n## 5. ", 1)[0]
         self.assertIn(f"```bash\n{build}", section4)
         closed = blocks(section4.split("**Закрытый прогон жюри.**", 1)[1], "bash")[0]
         self.assertEqual("".join(run), closed)
-        ci = (ROOT / ".github" / "workflows" / "verify.yml").read_text(encoding="utf-8")
+
+    @unittest.skipUnless(CI.exists(), "the CI workflow is not copied into the Docker image")
+    def test_the_closed_run_is_the_command_of_the_ci_step(self):
+        (jury,) = blocks(DOCKER, "bash")
+        run = jury.splitlines()[1:]
+        ci = CI.read_text(encoding="utf-8")
         for line in (run[0], run[-1]):                  # the policy folder and the docker run itself
             with self.subTest(line=line[:40]):
-                self.assertIn(line.strip(), ci)
+                self.assertIn(line, ci)
 
     def test_every_code_version_in_the_readme_is_the_package_version(self):
         versions = re.findall(r'"code_version": "([^"]*)"', README)
